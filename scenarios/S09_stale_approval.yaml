@@ -1,0 +1,105 @@
+id: S09
+title: Stock changes between approvals; the approval is void and the plan is redone
+group: adversarial
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S09-1
+      channel: email
+      sender: sales@cmp-a.example
+      received_at: 2026-11-03T09:12:00+03:00
+      subject: "PO-4471 delivery update"
+      body: |
+        Dear Procurement Team,
+
+        Due to a production line stoppage at our plant, we can only deliver 300 of the
+        500 units of CMP-24 on PO-4471 on 10 November as confirmed. The remaining 200 units
+        will follow on 20 December.
+
+        Best regards,
+        Export Sales
+  - {at: 2026-11-03T10:30:00+03:00, type: approval, approver_id: APR-2, decision: approve}
+  - at: 2026-11-03T10:50:00+03:00
+    type: stock_adjustment
+    adjustment:
+      id: ADJ-S09-1
+      received_at: 2026-11-03T10:50:00+03:00
+      item_id: CMP-24
+      location_id: PLANT-RUH
+      new_on_hand: 150
+      reason: "Late-posted receipt of 50 units from a returned shipment"
+  - {at: 2026-11-03T11:15:00+03:00, type: approval, approver_id: APR-4, decision: approve}
+  - {at: 2026-11-03T13:00:00+03:00, type: approval, approver_id: APR-2, decision: approve}
+  - {at: 2026-11-03T13:20:00+03:00, type: approval, approver_id: APR-4, decision: approve}
+
+expected:
+  claims:                      # as S01
+    - {kind: partial_quantity, po_line_id: POL-4471-1, item_id: CMP-24, new_qty: 300, verification: verified}
+    - {kind: delay, po_line_id: POL-4471-1, item_id: CMP-24, new_qty: 200, new_date: 2026-12-20, verification: verified}
+
+  shortage:                    # after the adjustment
+    - {so_line_id: SOL-H-1001-1, work_order_id: WO-1, item_id: CMP-24, short_qty: 150, need_by: 2026-11-24, line_at_risk: 600, penalty: 90000.00}
+
+  options:                     # after the adjustment
+    - {id: OPT-B, kind: buy, suppliers: [SUP-B], description: "Buy 150 from SUP-B, cancel late 200 on PO-4471", incremental: 22500.00, risk: 4500.00, expected_total: 27000.00}
+    - {id: OPT-C, kind: buy, suppliers: [SUP-C], description: "Buy 150 from SUP-C", incremental: 8437.50, risk: 27000.00, expected_total: 35437.50}
+    - {id: OPT-BC, kind: buy, suppliers: [SUP-B, SUP-C], description: "Buy 50 from SUP-B and 100 from SUP-C", incremental: 13125.00, risk: 30150.00, expected_total: 43275.00}
+    - {id: OPT-WAIT, kind: wait, suppliers: [], description: "Accept delay", incremental: 0.00, penalty: 90000.00, goodwill: 48000.00, expected_total: 138000.00}
+  recommendation: OPT-B
+
+  mandate:
+    item_id: CMP-24
+    min_qty: 150
+    max_qty: 150
+    latest_date: 2026-11-24
+    max_unit_price: {amount: "1310.62", currency: SAR}
+    next_best_option_id: OPT-C
+    offer_within_mandate: true
+
+  approval_requests:
+    - {tier: dual, roles: [operations_director, procurement_manager], qty: 200, decided: voided, voided_at: 2026-11-03T11:15:00+03:00, reason: stock_on_hand_pct}
+    - {tier: dual, roles: [operations_director, procurement_manager], qty: 150, decided: approved}
+
+  final_state:
+    created:
+      purchase_orders: [{supplier_id: SUP-B, order_date: 2026-11-03}]
+      purchase_order_lines:
+        - {item_id: CMP-24, qty_ordered: 150, unit_price: {amount: "340.00", currency: USD}, expected_date: 2026-11-10}
+    changed:
+      purchase_order_lines:
+        POL-4471-1: {qty_ordered: 300}
+      stock:
+        CMP-24@PLANT-RUH: {on_hand: 150}   # from the system of record, not an agent action
+    unchanged: [sales_order_lines, work_orders, allocations, substitutions]
+
+  outbox:
+    - {to: SUP-B, kind: supplier, template: purchase_order}
+    - {to: SUP-A, kind: supplier, template: po_change}
+
+  review_tasks: []
+
+  must_not:
+    - a purchase order for 200 units (the voided plan)
+    - APR-2's 10:30 approval counted toward the second request
+    - any execution at 11:15
+
+worked_answer: |
+  1. 09:12 as S01; the first request is for 200 from SUP-B. APR-2 approves at 10:30.
+  2. 10:50 the system of record raises CMP-24 on hand from 100 to 150 (+50%).
+  3. 11:15 APR-4 approves, so the graph resumes and re-checks the basis fingerprint before
+     executing. On-hand changed 50%, above void_if_changed.stock_on_hand_pct (5) -> the
+     request is void, nothing runs, and both decisions are kept in the audit log.
+     Executing would have bought 50 units too many (SAR 63,750 of commitment).
+  4. Re-plan. 150 on hand + 300 on 10 Nov = 450 by 24 Nov -> short 150.
+     OPT-B: 150 x 150 = 22,500 + 4,500 = 27,000.
+     OPT-C: 150 x 56.25 = 8,437.50 + 27,000 = 35,437.50.
+     OPT-BC (SUP-B min 50, SUP-C min 100): 7,500 + 5,625 + 30,150 = 43,275.
+  5. Mandate for OPT-B: 0.9 x (35,437.50 - 4,500) = 27,843.75 -> 185.625 -> 185.62/unit
+     -> SAR 1,310.62. OFF-B-1 = SAR 1,275: within.
+  6. Governance: commitment 150 x 1,275 = 191,250 -> dual; incremental 22,500 < 25,000.
+     It is a new request, so both signatures are needed again. Approved 13:00 / 13:20.

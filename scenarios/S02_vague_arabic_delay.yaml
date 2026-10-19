@@ -1,0 +1,78 @@
+id: S02
+title: Vague Arabic message hints at a delay with no quantity or date
+group: ambiguous
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S02-1
+      channel: email
+      sender: gulf.agent@cmp-a.example
+      received_at: 2026-11-03T09:12:00+03:00
+      subject: "بخصوص PO-4471"
+      # "Regarding purchase order PO-4471, we would like to inform you that there may be a
+      #  slight delay in the shipment due to circumstances at the factory. We will send you
+      #  the details soon. Regards"
+      body: |
+        السلام عليكم،
+
+        بخصوص طلب الشراء PO-4471، نود إعلامكم بأنه قد يكون هناك تأخير بسيط في الشحنة
+        بسبب ظروف في المصنع. سنوافيكم بالتفاصيل قريباً.
+
+        مع التحية
+
+expected:
+  claims:
+    - {kind: delay, po_line_id: POL-4471-1, item_id: CMP-24, new_qty: null, new_date: null, verification: unverified}
+  alternatives_accepted:
+    claims[0].kind: [delay, unclear]
+
+  shortage: []                 # nothing is netted from an unverified claim
+  options: []
+  recommendation: null
+  mandate: null
+  approval_requests: []
+
+  final_state:
+    created: {}
+    changed: {}
+    unchanged: [purchase_order_lines, sales_order_lines, work_orders, allocations, stock]
+
+  outbox:
+    - {to: SUP-A, kind: supplier, template: status_request, language: en}
+
+  review_tasks:
+    - assignee_role: planner
+      reason_includes: [PO-4471, CMP-24, SOL-H-1001-1]
+
+  must_not:
+    - any change to POL-4471-1 (in particular no guessed expected_date)
+    - any purchase order or quote request to a backup supplier
+    - any message to a customer
+    - an approval request (there is nothing to approve)
+
+worked_answer: |
+  1. Claim. Sender gulf.agent@cmp-a.example is in SUP-A contacts and "PO-4471" resolves
+     to POL-4471-1, so the source is genuine. But the message gives no quantity and no date
+     ("may be a slight delay"), so a delay event cannot be verified: verification stays
+     "unverified" with note "missing new_date". Confidence is irrelevant; even a confident
+     extraction of a dateless delay changes nothing.
+
+  2. No planning. Pegging uses verified events only, so the plan is unchanged and no
+     options or mandate are produced.
+
+  3. Follow-up. A templated status request to SUP-A asking for confirmed quantity and
+     delivery date on PO-4471 is template_only -> execute tier, sent without approval.
+     V1 drafts in English only (communication.draft_languages).
+
+  4. Review task. The exposure is material (CMP-24 is critical and POL-4471-1 feeds WO-1 /
+     SOL-H-1001-1, tier-1 customer, fixed penalty), so the planner gets a review task that
+     names the PO, the item and the order at risk. It reports the exposure; it does not
+     estimate a delay.
+
+  5. Later (outside this window): no reply within extraction.follow_up_hours (24) ->
+     status request re-sent once, then a second review task.

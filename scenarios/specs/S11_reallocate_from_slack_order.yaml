@@ -1,0 +1,90 @@
+id: S11
+title: Compressor delay; give the developer's order priority over a distributor order with slack
+group: golden
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+seed_overrides:
+  - {table: stock, match: {item_id: CU-KIT-18}, set: {on_hand: 500}}
+  - {table: stock, match: {item_id: PKG-18}, set: {on_hand: 500}}
+  - {table: purchase_order_lines, id: POL-4472-1, set: {qty_ordered: 350}}
+  - table: sales_orders
+    add: {id: SO-D-2002, customer_id: CUS-DIST, order_date: 2026-10-12}
+  - table: sales_order_lines
+    add: {id: SOL-D-2002-1, sales_order_id: SO-D-2002, item_id: AC-18, qty: 100,
+          unit_price: {amount: "2300.00", currency: SAR}, requested_date: 2026-12-31,
+          promised_date: 2026-12-31, partial_delivery_allowed: true}
+  - table: work_orders
+    add: {id: WO-4, item_id: AC-18, qty: 100, sales_order_line_id: SOL-D-2002-1,
+          start_date: 2026-12-01, due_date: 2026-12-06, status: planned}
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S11-1
+      sender: sales@cmp-a.example
+      compose:
+        facts:
+          - {kind: split, po: PO-4472, item: CMP-18, on_time_qty: 250, late_qty: 100,
+             original_date: 2026-11-25, new_date: 2026-12-25}
+  - {at: 2026-11-03T10:30:00+03:00, type: approval, approver_id: APR-1, decision: approve}
+
+expected:
+  shortage:
+    - {so_line_id: SOL-V-3001-1, work_order_id: WO-3, item_id: CMP-18, short_qty: 100, need_by: 2026-12-08,
+       line_at_risk: 400, penalty: 10500.00}
+  options:
+    - {id: OPT-REALLOC, kind: reallocate, suppliers: [], incremental: 0.00, penalty: 0.00, goodwill: 0.00, expected_total: 0.00}
+    - {id: OPT-WAIT, kind: wait, suppliers: [], incremental: 0.00, penalty: 10500.00, goodwill: 3500.00, expected_total: 14000.00}
+  options_excluded:
+    - {option: "Partial delivery", reason: "SOL-V-3001-1 partial_delivery_allowed is false"}
+  recommendation: OPT-REALLOC
+  mandate: null
+
+  approval_requests:
+    - tier: approve
+      roles: [planner]
+      actions: [split_po_line, reschedule_work_order]
+      decided: approved
+
+  final_state:
+    created: {}
+    changed:
+      purchase_order_lines:
+        POL-4472-1: {qty_ordered: 250, expected_date: 2026-11-25}
+        POL-4472-1-2: {qty_ordered: 100, expected_date: 2026-12-25}
+      work_orders:
+        WO-4: {start_date: 2026-12-25, due_date: 2026-12-30}
+    unchanged: [purchase_order_lines, sales_order_lines, stock, allocations]
+
+  outbox: []
+  review_tasks: []
+
+  must_not:
+    - any message to a customer (WO-4 still meets its 31 Dec promise)
+    - any purchase order (there is no backup offer for CMP-18, and none is needed)
+
+worked_answer: |
+  1. Claims. Sender is a SUP-A contact; PO-4472 resolves to POL-4472-1 (350 open, CMP-18);
+     250 + 100 = 350; the quoted sentence holds both quantities and both dates. Verified.
+
+  2. Pegging. CMP-18 supply: 100 on hand, 250 on 25 Nov, 100 on 25 Dec. Demand in need-date
+     order: WO-4 (distributor, 100, starts 1 Dec) then WO-3 (developer, 350, starts 8 Dec).
+     WO-4 takes 100 of the 25 Nov batch; WO-3 gets the other 150 plus the 100 on hand = 250
+     and is short 100 until 25 Dec. The developer line forbids partial delivery: 400 at risk.
+
+  3. Options (SAR).
+     OPT-WAIT: WO-3 starts 25 Dec, done 30 Dec, 10 days after the 20 Dec promise; per-day
+       penalty 1,500 after 3 grace days = 7 x 1,500 = 10,500; goodwill tier 2 = 7 x 500 =
+       3,500 -> 14,000.
+     OPT-REALLOC (serve WO-3 before WO-4): WO-3 takes 250 + 100 on hand = 350, on time. WO-4
+       (tier 3, not protected) waits for the 25 Dec batch: starts 25 Dec, done 30 Dec, inside
+       its 31 Dec promise. No penalty, no goodwill, no spend -> 0.
+     No backup offer exists for CMP-18; no substitute is defined for it.
+
+  4. Governance. Split POL-4472-1 to record the supplier's dates (CMP-18 is critical:
+     date-update-critical, planner) and reschedule WO-4 (reallocation, planner). Bundle:
+     approve, planner. APR-1 approves; nothing changed; it executes. No customer date moves,
+     so no customer message.

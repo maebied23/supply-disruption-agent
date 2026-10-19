@@ -1,0 +1,9 @@
+[project]
+name = "sdra"
+version = "0.0.1"
+description = "Supply Disruption Response Agent"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

@@ -1,0 +1,44 @@
+id: S20
+title: The supplier gives the new date only as "two weeks later"; no guessing
+group: ambiguous
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S20-1
+      sender: sales@cmp-a.example
+      compose:
+        facts:
+          - {kind: relative, po: PO-4471, item: CMP-24, on_time_qty: 300, late_qty: 200,
+             relative: two weeks later}
+
+expected:
+  shortage: []
+  options: []
+  recommendation: null
+  mandate: null
+  approval_requests: []
+
+  final_state:
+    created: {}
+    changed: {}
+    unchanged: [purchase_order_lines, sales_order_lines, work_orders, stock, allocations]
+
+  outbox:
+    - {to: SUP-A, kind: supplier, template: status_request}
+  review_tasks:
+    - {assignee_role: planner, reason_includes: [MSG-S20-1, missing new_date, PO-4471]}
+
+  must_not:
+    - a delay dated 17 Nov or 24 Nov (two weeks after the message or after delivery are both guesses)
+    - acting on the 300 alone (the line is held whole until the rest is known)
+
+worked_answer: |
+  The partial claim (300 on time) is clear; the delay claim has no date ("two weeks later"
+  is relative to an unstated point). The delay stays unverified (missing new_date) and the
+  partial claim on the same line is held with it. Nothing is planned; SUP-A gets a
+  templated status request; the planner gets one review task with the exposure.

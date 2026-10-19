@@ -1,0 +1,39 @@
+id: S22
+title: Supplier states more units than are open on the PO
+group: ambiguous
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S22-1
+      sender: sales@cmp-a.example
+      compose:
+        facts:
+          - {kind: delay, po: PO-4471, item: CMP-24, qty: 600, new_date: 2026-12-20,
+             verification: unverified, note: quantity 600 above open 500}
+
+expected:
+  shortage: []
+  options: []
+  recommendation: null
+  mandate: null
+  approval_requests: []
+
+  final_state:
+    created: {}
+    changed: {}
+    unchanged: [purchase_order_lines, sales_order_lines, work_orders, stock, allocations]
+
+  outbox:
+    - {to: SUP-A, kind: supplier, template: status_request}
+  review_tasks:
+    - {assignee_role: planner, reason_includes: [MSG-S22-1, quantity 600 above open 500]}
+
+worked_answer: |
+  PO-4471 has 500 open; the message says 600 units are delayed. allow_qty_above_open_po is
+  false, so the claim is unverified (the PO may be mistyped, or the supplier may be
+  confusing orders). Status request to SUP-A; review task to the planner. Nothing planned.

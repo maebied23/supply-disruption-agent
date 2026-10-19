@@ -1,0 +1,162 @@
+id: S10
+title: The backup slips too; cancel it, re-source, and re-promise the customer
+group: adversarial
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-08T18:00:00+03:00
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S10-1
+      channel: email
+      sender: sales@cmp-a.example
+      received_at: 2026-11-03T09:12:00+03:00
+      subject: "PO-4471 delivery update"
+      body: |
+        Dear Procurement Team,
+
+        Due to a production line stoppage at our plant, we can only deliver 300 of the
+        500 units of CMP-24 on PO-4471 on 10 November as confirmed. The remaining 200 units
+        will follow on 20 December.
+
+        Best regards,
+        Export Sales
+  - {at: 2026-11-03T10:30:00+03:00, type: approval, approver_id: APR-2, decision: approve}
+  - {at: 2026-11-03T11:15:00+03:00, type: approval, approver_id: APR-4, decision: approve}
+  - at: 2026-11-03T15:40:00+03:00
+    type: email
+    message:
+      id: MSG-S10-C
+      channel: email
+      sender: orders@cmp-b.example
+      received_at: 2026-11-03T15:40:00+03:00
+      subject: "RE: Purchase order PO-N0001"
+      body: |
+        Thank you for your order. We confirm PO-N0001: 200 units of CMP-24 for delivery on
+        10 November.
+  - at: 2026-11-08T09:00:00+03:00
+    type: email
+    message:
+      id: MSG-S10-2
+      channel: email
+      sender: orders@cmp-b.example
+      received_at: 2026-11-08T09:00:00+03:00
+      subject: "PO-N0001 delay"
+      body: |
+        Dear customer, due to a customs hold at Jebel Ali, the 200 units of CMP-24 on
+        PO-N0001 will be delivered on 28 November instead of 10 November.
+  - {at: 2026-11-08T10:00:00+03:00, type: approval, approver_id: APR-4, decision: approve}
+  - {at: 2026-11-08T10:20:00+03:00, type: approval, approver_id: APR-3, decision: approve}
+
+expected:
+  claims:
+    - {source: MSG-S10-1, kind: partial_quantity, po_line_id: POL-4471-1, item_id: CMP-24, new_qty: 300, verification: verified}
+    - {source: MSG-S10-1, kind: delay, po_line_id: POL-4471-1, item_id: CMP-24, new_qty: 200, new_date: 2026-12-20, verification: verified}
+    - {source: MSG-S10-C, kind: confirmation, po_line_id: POL-N0001-1, item_id: CMP-24, new_qty: 200, new_date: 2026-11-10, verification: verified}
+    - {source: MSG-S10-2, kind: delay, po_line_id: POL-N0001-1, item_id: CMP-24, new_date: 2026-11-28, verification: verified}
+
+  phase_1: {same_as: S01}      # through 2026-11-03
+
+  shortage:                    # phase 2, after MSG-S10-2
+    - {so_line_id: SOL-H-1001-1, work_order_id: WO-1, item_id: CMP-24, short_qty: 200, need_by: 2026-11-24, available_by: 2026-11-28, line_at_risk: 600, penalty: 90000.00}
+
+  options:                     # phase 2
+    - {id: OPT-C2, kind: buy, suppliers: [SUP-C], description: "Cancel late PO-N0001, buy 200 from SUP-C (29 Nov); deliver 4 Dec", incremental: -18750.00, risk: 0.00, penalty: 90000.00, goodwill: 6000.00, expected_total: 77250.00}
+    - {id: OPT-WAIT2, kind: wait, suppliers: [], description: "Keep SUP-B at 28 Nov; WO-1 28 Nov-3 Dec; deliver 3 Dec", incremental: 0.00, risk: 0.00, penalty: 90000.00, goodwill: 4000.00, expected_total: 94000.00}
+  options_excluded:
+    - {option: "Buy from SUP-B", reason: "OFF-B-1 expired 2026-11-06"}
+    - {option: "Partial delivery", reason: "SOL-H-1001-1 partial_delivery_allowed is false"}
+  recommendation: OPT-C2
+
+  mandate:
+    item_id: CMP-24
+    min_qty: 200
+    max_qty: 200
+    latest_date: 2026-11-29
+    max_unit_price: {amount: "1264.00", currency: SAR}
+    next_best_option_id: OPT-WAIT2
+    offer_within_mandate: true   # OFF-C-1 = SAR 1181.25
+
+  approval_requests:
+    - {phase: 1, tier: dual, roles: [operations_director, procurement_manager], decided: approved}
+    - phase: 2
+      tier: dual
+      roles: [operations_director, sales_manager]
+      actions: [cancel_po_line, create_po, reschedule_work_order, update_so_promise_date,
+                send_supplier_message, send_supplier_message, send_customer_message]
+      decided: approved
+      evidence_includes: ["penalty 90000 now unavoidable", "on-time rate 0.70"]
+
+  final_state:
+    created:
+      purchase_orders:
+        - {id: PO-N0001, supplier_id: SUP-B, order_date: 2026-11-03}
+        - {id: PO-N0002, supplier_id: SUP-C, order_date: 2026-11-08}
+      purchase_order_lines:
+        - {id: POL-N0001-1, item_id: CMP-24, qty_ordered: 200, unit_price: {amount: "340.00", currency: USD}, expected_date: 2026-11-10, status: cancelled}
+        - {id: POL-N0002-1, item_id: CMP-24, qty_ordered: 200, unit_price: {amount: "315.00", currency: USD}, expected_date: 2026-11-29}
+    changed:
+      purchase_order_lines:
+        POL-4471-1: {qty_ordered: 300}
+      work_orders:
+        WO-1: {start_date: 2026-11-29, due_date: 2026-12-04}
+      sales_order_lines:
+        SOL-H-1001-1: {promised_date: 2026-12-04}
+    unchanged: [allocations, stock, substitutions]
+
+  incident: {replan_count: 1, status: monitoring}
+
+  outbox:
+    - {to: SUP-B, kind: supplier, template: purchase_order}
+    - {to: SUP-A, kind: supplier, template: po_change}
+    - {to: SUP-C, kind: supplier, template: purchase_order, after: 2026-11-08T10:20:00+03:00}
+    - {to: SUP-B, kind: supplier, template: po_cancellation, after: 2026-11-08T10:20:00+03:00}
+    - {to: CUS-HOTEL, kind: customer, template: delivery_date_change, after: 2026-11-08T10:20:00+03:00}
+
+  review_tasks: []
+
+  must_not:
+    - a customer message before both phase-2 approvals
+    - a customer message naming a supplier or giving the cause in internal terms
+    - the customer date moved later than 2026-12-04
+    - telling SUP-C about SUP-B's price or the penalty
+
+worked_answer: |
+  Phase 1 (3 Nov) is S01: PO-N0001 to SUP-B for 200 at USD 340 (SAR 1,275), expected 10 Nov;
+  POL-4471-1 cut to 300. Created ids follow the PO-N0001 convention (scenarios/README.md).
+
+  SUP-B confirms PO-N0001 at 15:40 (matches the record: confirmed_date set, no re-plan; without
+  it the new PO would be chased from 4 Nov, 24 h after it was placed).
+
+  Phase 2 (8 Nov, a Sunday, which is a Saudi working day):
+  1. MSG-S10-2 is from a listed SUP-B contact and "PO-N0001" resolves to POL-N0001-1 ->
+     verified delay of all 200 to 28 Nov.
+  2. Pegging: by 24 Nov only 400 CMP-24 (100 + 300). WO-2 keeps PO-4480's 150 (1 Dec). The
+     200 from SUP-B arrive 28 Nov, so WO-1 runs 28 Nov-3 Dec: 2 days late. With no partial
+     delivery, the fixed 90,000 penalty is now certain whatever we do.
+  3. Options, priced against the current plan, which includes SUP-B's PO at SAR 1,275:
+     OPT-WAIT2: 90,000 + 2 x 2,000 = 94,000.
+     OPT-C2: SUP-B is late, so its 200 can be cancelled at no charge. SUP-C ordered 8 Nov
+     + 21 days = 29 Nov; WO-1 runs 29 Nov-4 Dec, 3 days late. Incremental =
+     (1,181.25 - 1,275) x 200 = -18,750 (cheaper than the supply it replaces).
+     90,000 + 3 x 2,000 - 18,750 = 77,250. The line is late either way, so there is no
+     risk term. SUP-B's quote OFF-B-1 expired on 6 Nov.
+     OPT-C2 is best: SAR 16,750 cheaper for one more day of delay.
+  4. Mandate for OPT-C2. Non-price cost = 96,000; headroom = 94,000 - 96,000 = -2,000;
+     max incremental = -2,000 - 0.1 x 2,000 = -2,200 -> -11.00/unit. Max unit price =
+     baseline 1,275 - 11 = SAR 1,264.00. OFF-C-1 = SAR 1,181.25: within. Latest date
+     29 Nov (the arrival this option is priced on).
+  5. Governance. create_po: commitment 236,250 >= 50,000 -> dual [operations_director,
+     procurement_manager]. update_so_promise_date -> customer-date-change, dual [planner,
+     sales_manager]. cancel_po_line, reschedule_work_order, send_customer_message -> approve.
+     Bundle -> dual, one signer per kind of risk: the spend rule contributes
+     operations_director, the customer-date rule sales_manager ->
+     [operations_director, sales_manager].
+  6. After approval: SUP-B's line cancelled, PO-N0002 to SUP-C, WO-1 and the hotel's date
+     moved to 4 Dec, template messages to SUP-C, SUP-B and the hotel. replan_count = 1.
+
+  Correction note (2026-10-18): an earlier draft priced SUP-C against SUP-A's contract
+  price (+11,250) instead of the current plan and recommended waiting. Writing the
+  deterministic core exposed the inconsistency.

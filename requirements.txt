@@ -1,0 +1,7 @@
+pydantic==2.14.1
+PyYAML==6.0.3
+langgraph==1.2.16
+langgraph-checkpoint-sqlite==3.1.2
+anthropic==1.15.0
+fastapi==0.146.0
+uvicorn==0.54.0

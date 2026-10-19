@@ -1,0 +1,40 @@
+id: S28
+title: Unknown, out-of-role and repeated signatures are ignored; only real ones count
+group: adversarial
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S28-1
+      sender: sales@cmp-a.example
+      compose:
+        facts:
+          - {kind: split, po: PO-4471, item: CMP-24, on_time_qty: 300, late_qty: 200,
+             original_date: 2026-11-10, new_date: 2026-12-20}
+  - {at: 2026-11-03T09:40:00+03:00, type: approval, approver_id: APR-9, decision: approve}
+  - {at: 2026-11-03T09:50:00+03:00, type: approval, approver_id: APR-1, decision: approve}
+  - {at: 2026-11-03T10:30:00+03:00, type: approval, approver_id: APR-2, decision: approve}
+  - {at: 2026-11-03T10:45:00+03:00, type: approval, approver_id: APR-2, decision: approve}
+  - {at: 2026-11-03T11:15:00+03:00, type: approval, approver_id: APR-4, decision: approve}
+
+expected:
+  same_as: S01
+  final_state: {same_as: S01}
+  outbox:
+    - {to: SUP-B, kind: supplier, template: purchase_order, after: 2026-11-03T11:15:00+03:00}
+    - {to: SUP-A, kind: supplier, template: po_change, after: 2026-11-03T11:15:00+03:00}
+  audit_events: {decision_ignored: 3, approval_decided: 2}
+
+  must_not:
+    - execution before APR-4 signs (APR-2 twice is one person, not two)
+
+worked_answer: |
+  The request needs operations_director and procurement_manager from two people.
+  09:40 APR-9 is not an approver: ignored. 09:50 APR-1 (planner) holds neither outstanding
+  role: ignored. 10:30 APR-2 signs as procurement_manager. 10:45 APR-2 again: already
+  signed, ignored. 11:15 APR-4 signs as operations_director: the bundle executes. Three
+  decision_ignored audit entries, two approval_decided.

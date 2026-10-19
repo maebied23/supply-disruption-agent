@@ -1,0 +1,111 @@
+id: S03
+title: Second approver rejects the backup supplier; agent re-plans with the next option
+group: adversarial
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S03-1
+      channel: email
+      sender: sales@cmp-a.example
+      received_at: 2026-11-03T09:12:00+03:00
+      subject: "PO-4471 delivery update"
+      body: |
+        Dear Procurement Team,
+
+        Due to a production line stoppage at our plant, we can only deliver 300 of the
+        500 units of CMP-24 on PO-4471 on 10 November as confirmed. The remaining 200 units
+        will follow on 20 December.
+
+        We apologise for the inconvenience.
+
+        Best regards,
+        Export Sales
+  - {at: 2026-11-03T10:30:00+03:00, type: approval, approver_id: APR-2, decision: approve}
+  - at: 2026-11-03T11:15:00+03:00
+    type: approval
+    approver_id: APR-4
+    decision: reject
+    exclude_supplier_ids: [SUP-B]
+    comment: "Do not use Supplier B; open quality claim from Q3."
+  - {at: 2026-11-03T13:00:00+03:00, type: approval, approver_id: APR-2, decision: approve}
+  - {at: 2026-11-03T13:20:00+03:00, type: approval, approver_id: APR-4, decision: approve}
+
+expected:
+  claims:                      # identical to S01
+    - {kind: partial_quantity, po_line_id: POL-4471-1, item_id: CMP-24, new_qty: 300, verification: verified}
+    - {kind: delay, po_line_id: POL-4471-1, item_id: CMP-24, new_qty: 200, new_date: 2026-12-20, verification: verified}
+
+  shortage:
+    - {so_line_id: SOL-H-1001-1, work_order_id: WO-1, item_id: CMP-24, short_qty: 200, need_by: 2026-11-24, line_at_risk: 600, penalty: 90000.00}
+
+  options:                     # after the rejection; every option using SUP-B is gone
+    - {id: OPT-C, kind: buy, suppliers: [SUP-C], description: "Buy 200 from SUP-C, cancel late 200 on PO-4471", incremental: 11250.00, risk: 27000.00, expected_total: 38250.00}
+    - {id: OPT-WAIT, kind: wait, suppliers: [], description: "Accept delay; hotel line delivered 2026-12-25", incremental: 0.00, penalty: 90000.00, goodwill: 48000.00, expected_total: 138000.00}
+  recommendation: OPT-C
+
+  mandate:
+    item_id: CMP-24
+    min_qty: 200
+    max_qty: 200
+    latest_date: 2026-11-24
+    max_unit_price: {amount: "1624.50", currency: SAR}
+    next_best_option_id: OPT-WAIT
+    offer_within_mandate: true   # OFF-C-1 = SAR 1181.25
+
+  approval_requests:
+    - {tier: dual, roles: [operations_director, procurement_manager], option: OPT-B, decided: rejected}
+    - tier: dual
+      roles: [operations_director, procurement_manager]
+      option: OPT-C
+      decided: approved
+      evidence_includes: ["zero days of slack", "on-time rate 0.70"]
+
+  final_state:
+    created:
+      purchase_orders: [{supplier_id: SUP-C, order_date: 2026-11-03}]
+      purchase_order_lines:
+        - {item_id: CMP-24, qty_ordered: 200, unit_price: {amount: "315.00", currency: USD}, expected_date: 2026-11-24}
+    changed:
+      purchase_order_lines:
+        POL-4471-1: {qty_ordered: 300}
+    unchanged: [sales_order_lines, work_orders, allocations, stock, substitutions]
+
+  outbox:
+    - {to: SUP-C, kind: supplier, template: purchase_order}
+    - {to: SUP-A, kind: supplier, template: po_change}
+
+  review_tasks: []
+
+  must_not:
+    - any purchase order or message to SUP-B
+    - any action from the rejected bundle executed, including the approved half
+    - the rejection comment parsed into a plan change (only exclude_supplier_ids is used)
+    - a third approval request in this window
+
+worked_answer: |
+  1-3. As S01 up to the first approval request (OPT-B, dual).
+
+  4. Rejection. APR-4 rejects with exclude_supplier_ids [SUP-B]. A dual request needs both
+     signatures, so APR-2's earlier approval does not let any part of the bundle run. The
+     comment is stored in the audit log but not interpreted. Options using SUP-B (OPT-B,
+     OPT-BC) are removed; remaining: OPT-C 38,250 and OPT-WAIT 138,000.
+
+  5. Mandate for OPT-C. Next best is OPT-WAIT at 138,000.
+     ceiling = 0.9 x (138,000 - 27,000) = 99,900 -> 499.50/unit.
+     Max unit price = 1,125 + 499.50 = SAR 1,624.50. OFF-C-1 = 315 x 3.75 = SAR 1,181.25:
+     within. Offer valid until 10 Nov, so still open.
+
+  6. Governance. create_po commitment 200 x 1,181.25 = 236,250 >= 50,000 -> dual;
+     incremental 11,250 < 25,000 (that rule does not match). Bundle -> dual
+     [operations_director, procurement_manager]. The evidence must flag that SUP-C arrives
+     on WO-1's start date (zero slack) and has a 0.70 on-time rate. Both approve; the
+     basis is unchanged, so the bundle executes.
+
+  7. Policy decision recorded here: after one rejection the agent proposes the next-best
+     option once. A second rejection would close the incident as escalated, with no further
+     requests.

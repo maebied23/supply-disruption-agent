@@ -1,0 +1,44 @@
+id: S30
+title: The supplier's email arrives twice while the plan awaits signatures; nothing restarts
+group: adversarial
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S30-1
+      sender: sales@cmp-a.example
+      compose:
+        facts:
+          - {kind: split, po: PO-4471, item: CMP-24, on_time_qty: 300, late_qty: 200,
+             original_date: 2026-11-10, new_date: 2026-12-20}
+  - at: 2026-11-03T10:00:00+03:00
+    type: email
+    message:
+      id: MSG-S30-2
+      sender: gulf.agent@cmp-a.example
+      compose:
+        subject: "FW: PO-4471 delivery update"
+        facts:
+          - {kind: split, po: PO-4471, item: CMP-24, on_time_qty: 300, late_qty: 200,
+             original_date: 2026-11-10, new_date: 2026-12-20, duplicate: true}
+  - {at: 2026-11-03T10:30:00+03:00, type: approval, approver_id: APR-2, decision: approve}
+  - {at: 2026-11-03T11:15:00+03:00, type: approval, approver_id: APR-4, decision: approve}
+
+expected:
+  same_as: S01
+  final_state: {same_as: S01}
+  audit_events: {approval_voided: 0, incident_reopened: 0}
+
+  must_not:
+    - voiding the pending approval because the same news arrived again
+    - a second approval request
+
+worked_answer: |
+  MSG-S30-2 (from SUP-A's Gulf agent, forwarded) states exactly what the ledger already holds
+  for POL-4471-1: 300 on 10 Nov, 200 on 20 Dec. It verifies, but it is a duplicate, so it
+  does not reopen the incident or void REQ-N0001 (which would make both people sign again
+  for nothing). The run is S01's.

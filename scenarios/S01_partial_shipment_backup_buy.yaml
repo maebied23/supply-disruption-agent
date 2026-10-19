@@ -1,0 +1,125 @@
+id: S01
+title: Compressor supplier ships 300 of 500; buy the gap from a backup
+group: golden
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S01-1
+      channel: email
+      sender: sales@cmp-a.example
+      received_at: 2026-11-03T09:12:00+03:00
+      subject: "PO-4471 delivery update"
+      body: |
+        Dear Procurement Team,
+
+        Due to a production line stoppage at our plant, we can only deliver 300 of the
+        500 units of CMP-24 on PO-4471 on 10 November as confirmed. The remaining 200 units
+        will follow on 20 December.
+
+        We apologise for the inconvenience.
+
+        Best regards,
+        Export Sales
+  - {at: 2026-11-03T10:30:00+03:00, type: approval, approver_id: APR-2, decision: approve}
+  - {at: 2026-11-03T11:15:00+03:00, type: approval, approver_id: APR-4, decision: approve}
+
+expected:
+  claims:
+    - {kind: partial_quantity, po_line_id: POL-4471-1, item_id: CMP-24, new_qty: 300, verification: verified}
+    - {kind: delay, po_line_id: POL-4471-1, item_id: CMP-24, new_qty: 200, new_date: 2026-12-20, verification: verified}
+
+  shortage:
+    - so_line_id: SOL-H-1001-1
+      work_order_id: WO-1
+      item_id: CMP-24
+      short_qty: 200
+      need_by: 2026-11-24
+      line_at_risk: 600          # partial delivery not allowed, so the whole line is late
+      penalty: 90000.00
+
+  options:                       # best first
+    - {id: OPT-B, kind: buy, suppliers: [SUP-B], description: "Buy 200 from SUP-B, cancel late 200 on PO-4471", incremental: 30000.00, risk: 4500.00, expected_total: 34500.00}
+    - {id: OPT-C, kind: buy, suppliers: [SUP-C], description: "Buy 200 from SUP-C, cancel late 200 on PO-4471", incremental: 11250.00, risk: 27000.00, expected_total: 38250.00}
+    - {id: OPT-BC, kind: buy, suppliers: [SUP-B, SUP-C], description: "Buy 50 from SUP-B and 150 from SUP-C", incremental: 15937.50, risk: 30150.00, expected_total: 46087.50}
+    - {id: OPT-WAIT, kind: wait, suppliers: [], description: "Accept delay; hotel line delivered 2026-12-25", incremental: 0.00, penalty: 90000.00, goodwill: 48000.00, expected_total: 138000.00}
+  options_excluded:
+    - {option: "Substitute CMP-24-ALT on WO-1", reason: "SUB-1 is approved for CUS-DIST only"}
+    - {option: "Partial delivery to hotel", reason: "SOL-H-1001-1 partial_delivery_allowed is false"}
+  recommendation: OPT-B
+
+  mandate:
+    item_id: CMP-24
+    min_qty: 200
+    max_qty: 200
+    latest_date: 2026-11-24
+    max_unit_price: {amount: "1276.87", currency: SAR}
+    next_best_option_id: OPT-C
+    offer_within_mandate: true   # OFF-B-1 = SAR 1275.00
+
+  approval_requests:
+    - tier: dual
+      roles: [operations_director, procurement_manager]
+      actions: [create_po, update_po_quantity, send_supplier_message, send_supplier_message]
+      decided: approved
+
+  final_state:
+    created:
+      purchase_orders: [{supplier_id: SUP-B, order_date: 2026-11-03}]
+      purchase_order_lines:
+        - {item_id: CMP-24, qty_ordered: 200, unit_price: {amount: "340.00", currency: USD}, expected_date: 2026-11-10}
+    changed:
+      purchase_order_lines:
+        POL-4471-1: {qty_ordered: 300}   # expected_date stays 2026-11-10
+    unchanged: [purchase_order_lines, sales_order_lines, work_orders, allocations, stock, substitutions]
+
+  outbox:
+    - {to: SUP-B, kind: supplier, template: purchase_order}
+    - {to: SUP-A, kind: supplier, template: po_change}
+
+  review_tasks: []
+
+  must_not:
+    - any outbound message before both approvals are recorded
+    - any message to a customer
+    - any purchase order to SUP-C
+    - SUB-1 applied to WO-1
+    - an outbound message containing the penalty (90000), the mandate (1276.87) or SUP-C's price
+
+worked_answer: |
+  1. Claims. Sender is in SUP-A contacts; "PO-4471" resolves to POL-4471-1 (open 500);
+     300 + 200 = 500 <= open qty; date shift 40 days <= 120. Both claims verified.
+
+  2. Pegging after the event. CMP-24 supply: 100 on hand, 300 on 10 Nov, 150 on 1 Dec
+     (PO-4480), 200 on 20 Dec. WO-1 (600 x AC-24 for the hotel) starts 24 Nov and needs 600
+     by then; only 400 arrive in time -> short 200. The hotel line forbids partial delivery,
+     so all 600 units are late. WO-2 (distributor, starts 10 Dec) is covered by PO-4480.
+     CMP-24-ALT cannot help: SUB-1 is approved for the distributor only.
+
+  3. Options (SAR; USD x 3.75; contract price USD 300 = SAR 1125).
+     OPT-B: premium (340-300) x 3.75 x 200 = 30,000; risk 90,000 x (1-0.95) = 4,500 -> 34,500.
+     OPT-C: premium (315-300) x 3.75 x 200 = 11,250; arrives 24 Nov = WO-1 start, so zero slack;
+            risk 90,000 x (1-0.70) = 27,000 -> 38,250.
+     OPT-BC: cheapest split, so the dearer SUP-B takes its minimum (50) and SUP-C 150:
+            premium 7,500 + 8,437.50 = 15,937.50; the hotel is late if either slips,
+            P = 1 - 0.95 x 0.70 = 0.335, risk 30,150 -> 46,087.50.
+     OPT-WAIT: hotel can only complete once the 20 Dec batch lands; WO-1 runs 20-25 Dec,
+            24 days late: penalty 90,000 + goodwill 24 x 2,000 = 48,000 -> 138,000.
+            (The distributor stays on time with PO-4480.)
+     The late 200 on PO-4471 become surplus under B or C and are cancelled at no charge.
+
+  4. Mandate for OPT-B. Next best is OPT-C at 38,250.
+     ceiling = 0.9 x (38,250 - 4,500) = 30,375 -> 151.875/unit -> 151.87.
+     Max unit price = 1,125 + 151.87 = SAR 1,276.87. OFF-B-1 = 340 x 3.75 = SAR 1,275.00: within.
+
+  5. Governance. create_po: commitment 200 x 1,275 = 255,000 >= 50,000 and incremental
+     30,000 >= 25,000 -> dual [operations_director, procurement_manager].
+     update_po_quantity (decrease): approve [procurement_manager]. Both supplier messages
+     are templates -> execute, but they are sent only after the bundle is approved.
+     Bundle -> dual, two most senior roles from the winning tier: operations_director,
+     procurement_manager. APR-2 and APR-4 approve; nothing changed between analysis and
+     resume, so the approval stands and the bundle executes.

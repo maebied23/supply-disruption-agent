@@ -1,0 +1,30 @@
+id: S16
+title: S01 in Arabic; same verified claims, same plan and signatures
+group: golden
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S16-1
+      sender: gulf.agent@cmp-a.example
+      compose:
+        language: ar
+        facts:
+          - {kind: split, po: PO-4471, item: CMP-24, on_time_qty: 300, late_qty: 200,
+             original_date: 2026-11-10, new_date: 2026-12-20}
+  - {at: 2026-11-03T10:30:00+03:00, type: approval, approver_id: APR-2, decision: approve}
+  - {at: 2026-11-03T11:15:00+03:00, type: approval, approver_id: APR-4, decision: approve}
+
+expected:
+  same_as: S01
+  final_state: {same_as: S01}
+
+worked_answer: |
+  The Arabic message states the same facts as S01 (300 of 500 on 10 Nov, the remaining 200
+  on 20 Dec), with Arabic-Indic digits and Arabic month names. The grounding check reads
+  them from the quoted text, so both claims verify; everything after that is S01. V1 drafts
+  outbound messages in English only.

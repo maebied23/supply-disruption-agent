@@ -1,0 +1,55 @@
+id: S19
+title: The extractor misreads the new date; the claim is held, the supplier's reply settles it
+group: ambiguous
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S19-1
+      sender: sales@cmp-a.example
+      compose:
+        facts:
+          - {kind: split, po: PO-4471, item: CMP-24, on_time_qty: 300, late_qty: 200,
+             original_date: 2026-11-10, new_date: 2026-12-20,
+             misread_claim: delay, misread: {new_date: 2026-12-02}}
+  - at: 2026-11-03T13:00:00+03:00
+    type: email
+    message:
+      id: MSG-S19-2
+      sender: sales@cmp-a.example
+      in_reply_to: OUT-N0001
+      compose:
+        subject: "RE: Status request: PO-4471"
+        facts:
+          - {kind: split, po: PO-4471, item: CMP-24, on_time_qty: 300, late_qty: 200,
+             original_date: 2026-11-10, new_date: 2026-12-20}
+  - {at: 2026-11-03T14:00:00+03:00, type: approval, approver_id: APR-2, decision: approve}
+  - {at: 2026-11-03T15:00:00+03:00, type: approval, approver_id: APR-4, decision: approve}
+
+expected:
+  same_as: S01                # shortage, options, mandate, approval request
+  final_state: {same_as: S01}
+  outbox:
+    - {to: SUP-A, kind: supplier, template: status_request, at: 2026-11-03T09:12:00+03:00}
+    - {to: SUP-B, kind: supplier, template: purchase_order, after: 2026-11-03T15:00:00+03:00}
+    - {to: SUP-A, kind: supplier, template: po_change, after: 2026-11-03T15:00:00+03:00}
+  review_tasks:
+    - {assignee_role: planner, reason_includes: [MSG-S19-1, "date 2026-12-02 not in the quoted text"]}
+
+  must_not:
+    - any plan built on 2 Dec, a date the supplier never gave
+
+worked_answer: |
+  1. MSG-S19-1. The extractor returns the partial claim correctly but reads the new date as
+     2026-12-02. The quote it gives is genuine, but "2026-12-02" cannot be read from it (the
+     message says 20 December), so the grounding check holds the delay claim, and the
+     partial claim on the same line is held with it (no planning on half the picture). Taken
+     at face value, 2 Dec would price waiting as 6 days late instead of 24. Status request
+     OUT-N0001 to SUP-A; one review task for the planner.
+  2. MSG-S19-2 (13:00) replies to OUT-N0001 with the same facts, read correctly. Verified;
+     the reply supersedes anything held on the line. From here it is S01 at 13:00: shortage
+     200, OPT-SUP-B, mandate SAR 1,276.87, dual approval. APR-2 at 14:00, APR-4 at 15:00.

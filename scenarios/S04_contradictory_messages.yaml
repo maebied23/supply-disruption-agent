@@ -1,0 +1,88 @@
+id: S04
+title: Two genuine supplier contacts contradict each other; agent holds, asks, then acts
+group: adversarial
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S04-1
+      channel: email
+      sender: sales@cmp-a.example
+      received_at: 2026-11-03T09:12:00+03:00
+      subject: "PO-4471 confirmation"
+      body: |
+        Dear Procurement Team,
+        We confirm all 500 units of CMP-24 on PO-4471 will be delivered on 10 November.
+        Best regards, Export Sales
+  - at: 2026-11-03T09:40:00+03:00
+    type: email
+    message:
+      id: MSG-S04-2
+      channel: email
+      sender: gulf.agent@cmp-a.example
+      received_at: 2026-11-03T09:40:00+03:00
+      subject: "PO-4471"
+      body: |
+        Hello, please note that only 300 units of CMP-24 on PO-4471 will arrive on
+        10 November. The other 200 units are expected on 20 December.
+  - at: 2026-11-03T14:05:00+03:00
+    type: email
+    message:
+      id: MSG-S04-3
+      channel: email
+      sender: sales@cmp-a.example
+      received_at: 2026-11-03T14:05:00+03:00
+      in_reply_to: OUT-N0001
+      subject: "RE: PO-4471 status request"
+      body: |
+        Apologies for the confusion. Please disregard our earlier confirmation; our agent is
+        correct. 300 units will be delivered on 10 November and the remaining 200 units on
+        20 December.
+  - {at: 2026-11-03T15:00:00+03:00, type: approval, approver_id: APR-2, decision: approve}
+  - {at: 2026-11-03T15:30:00+03:00, type: approval, approver_id: APR-4, decision: approve}
+
+expected:
+  claims:
+    - {source: MSG-S04-1, kind: confirmation, po_line_id: POL-4471-1, item_id: CMP-24, verification: unverified, note: conflict}
+    - {source: MSG-S04-2, kind: partial_quantity, po_line_id: POL-4471-1, item_id: CMP-24, new_qty: 300, verification: unverified, note: conflict}
+    - {source: MSG-S04-2, kind: delay, po_line_id: POL-4471-1, item_id: CMP-24, new_qty: 200, new_date: 2026-12-20, verification: unverified, note: conflict}
+    - {source: MSG-S04-3, kind: partial_quantity, po_line_id: POL-4471-1, item_id: CMP-24, new_qty: 300, verification: verified}
+    - {source: MSG-S04-3, kind: delay, po_line_id: POL-4471-1, item_id: CMP-24, new_qty: 200, new_date: 2026-12-20, verification: verified}
+
+  same_as: S01                 # shortage, options, mandate and recommendation after 14:05
+  approval_requests:
+    - {tier: dual, roles: [operations_director, procurement_manager], decided: approved, created_after: 2026-11-03T14:05:00+03:00}
+
+  final_state: {same_as: S01}
+
+  outbox:
+    - {id: OUT-N0001, to: SUP-A, kind: supplier, template: status_request, sent_before: 2026-11-03T10:00:00+03:00}
+    - {to: SUP-B, kind: supplier, template: purchase_order}
+    - {to: SUP-A, kind: supplier, template: po_change}
+
+  review_tasks:
+    - {assignee_role: planner, reason_includes: [PO-4471, conflict]}
+
+  must_not:
+    - any planning output or approval request before MSG-S04-3
+    - the later message winning just because it is later (MSG-S04-2 alone must not trigger a plan)
+    - more than one status request for the conflict
+
+worked_answer: |
+  1. 09:12 MSG-S04-1 from a listed SUP-A contact confirms 500 on 10 Nov. On its own it
+     would be verified (it matches the record).
+  2. 09:40 MSG-S04-2, also from a listed SUP-A contact, says 300 + 200. Both messages are
+     about POL-4471-1, disagree on quantity, and arrive 28 minutes apart (< 48 h
+     contradiction window). All claims are held as unverified with note "conflict". No
+     planning. A templated status request (OUT-N0001, execute tier) asks SUP-A for one
+     confirmed position. The planner gets a review task, because the line feeds a tier-1
+     order with a fixed penalty.
+  3. 14:05 MSG-S04-3 is a reply to OUT-N0001 from a listed contact, so it supersedes the
+     held claims. Its claims are verified and match S01's.
+  4. From here everything is S01: shortage 200, OPT-B best at 34,500, mandate SAR 1,276.87,
+     OFF-B-1 still valid (until 6 Nov), dual approval, the same final state and supplier
+     messages. The only extra outbound message is the status request.

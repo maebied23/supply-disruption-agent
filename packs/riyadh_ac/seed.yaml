@@ -1,0 +1,235 @@
+# Seed records for the fictional Riyadh AC assembler. Hand-written for the first
+# go/no-go scenarios and kept hand-written (their worked answers cite it); the second pack
+# (packs/pumps_eu) shows the generated form.
+# Every row is validated against src/sdra/schema.py; all ids must resolve.
+#
+# Pack assumptions (state in README):
+#   - Supplier dates are delivery dates at our plant (DAP Riyadh).
+#   - Lead times and assembly times are calendar days in V1.
+#   - Assembly needs every component on hand at work-order start; no capacity limit in V1.
+#   - A delivery arriving on day D is usable from day D.
+#   - Late, undelivered PO quantities may be cancelled without charge (supplier contract term).
+#   - Backup suppliers' standing quotes are on file as SupplierOffer rows (no negotiation in V1).
+#   - Values are illustrative.
+
+locations:
+  - {id: PLANT-RUH, name: Riyadh assembly plant}
+
+items:
+  - {id: AC-24, name: "24k BTU split unit", sourcing: make, critical: true, assembly_lead_days: 5}
+  - {id: AC-18, name: "18k BTU split unit", sourcing: make, critical: true, assembly_lead_days: 5}
+  - {id: CMP-24, name: "Rotary compressor, 24k", sourcing: buy, critical: true}
+  - {id: CMP-24-ALT, name: "Rotary compressor, 24k, alternate make", sourcing: buy, critical: true}
+  - {id: CMP-18, name: "Rotary compressor, 18k", sourcing: buy, critical: true}
+  - {id: CU-KIT-24, name: "Copper tubing kit, 24k", sourcing: buy}
+  - {id: CU-KIT-18, name: "Copper tubing kit, 18k", sourcing: buy}
+  - {id: PCB-CTRL, name: "Control board", sourcing: buy, critical: true}
+  - {id: PKG-24, name: "Carton set, 24k", sourcing: buy}
+  - {id: PKG-18, name: "Carton set, 18k", sourcing: buy}
+  - {id: FST-KIT, name: "Fastener kit", sourcing: buy}
+
+bom:
+  - {parent_item_id: AC-24, component_item_id: CMP-24, qty_per: 1}
+  - {parent_item_id: AC-24, component_item_id: CU-KIT-24, qty_per: 1}
+  - {parent_item_id: AC-24, component_item_id: PCB-CTRL, qty_per: 1}
+  - {parent_item_id: AC-24, component_item_id: PKG-24, qty_per: 1}
+  - {parent_item_id: AC-24, component_item_id: FST-KIT, qty_per: 1}
+  - {parent_item_id: AC-18, component_item_id: CMP-18, qty_per: 1}
+  - {parent_item_id: AC-18, component_item_id: CU-KIT-18, qty_per: 1}
+  - {parent_item_id: AC-18, component_item_id: PCB-CTRL, qty_per: 1}
+  - {parent_item_id: AC-18, component_item_id: PKG-18, qty_per: 1}
+  - {parent_item_id: AC-18, component_item_id: FST-KIT, qty_per: 1}
+
+substitutions:
+  # Approved for the distributor only. The hotel chain's spec does not allow it.
+  - id: SUB-1
+    item_id: CMP-24
+    substitute_item_id: CMP-24-ALT
+    ratio: 1
+    parent_item_ids: [AC-24]
+    customer_ids: [CUS-DIST]
+    requires_customer_consent: false
+
+stock:
+  - {item_id: AC-24, location_id: PLANT-RUH, on_hand: 0}
+  - {item_id: AC-18, location_id: PLANT-RUH, on_hand: 50}
+  - {item_id: CMP-24, location_id: PLANT-RUH, on_hand: 100}
+  - {item_id: CMP-24-ALT, location_id: PLANT-RUH, on_hand: 80}
+  - {item_id: CMP-18, location_id: PLANT-RUH, on_hand: 100}
+  - {item_id: CU-KIT-24, location_id: PLANT-RUH, on_hand: 800}
+  - {item_id: CU-KIT-18, location_id: PLANT-RUH, on_hand: 400}
+  - {item_id: PCB-CTRL, location_id: PLANT-RUH, on_hand: 1200}
+  - {item_id: PKG-24, location_id: PLANT-RUH, on_hand: 800}
+  - {item_id: PKG-18, location_id: PLANT-RUH, on_hand: 400}
+  - {item_id: FST-KIT, location_id: PLANT-RUH, on_hand: 2000}
+
+allocations:
+  - {id: ALC-1, item_id: AC-18, location_id: PLANT-RUH, sales_order_line_id: SOL-V-3001-1, qty: 50, hard: false}
+
+customers:
+  - id: CUS-HOTEL
+    name: "Hotel chain (fictional)"
+    priority_tier: 1
+    contact_addresses: [procurement@hotel.example]
+    default_penalty: {kind: fixed, amount: {amount: "90000.00", currency: SAR}}
+  - id: CUS-DEV
+    name: "Property developer (fictional)"
+    priority_tier: 2
+    contact_addresses: [projects@developer.example]
+    default_penalty:
+      kind: per_day
+      amount_per_day: {amount: "1500.00", currency: SAR}
+      grace_days: 3
+      cap: {amount: "30000.00", currency: SAR}
+  - id: CUS-DIST
+    name: "HVAC distributor (fictional)"
+    priority_tier: 3
+    language: ar
+    contact_addresses: [orders@distributor.example]
+    # no default_penalty: policy.yaml default applies
+
+sales_orders:
+  - {id: SO-H-1001, customer_id: CUS-HOTEL, order_date: 2026-09-15}
+  - {id: SO-D-2001, customer_id: CUS-DIST, order_date: 2026-10-01}
+  - {id: SO-V-3001, customer_id: CUS-DEV, order_date: 2026-10-05}
+
+sales_order_lines:
+  - id: SOL-H-1001-1
+    sales_order_id: SO-H-1001
+    item_id: AC-24
+    qty: 600
+    unit_price: {amount: "3000.00", currency: SAR}
+    requested_date: 2026-12-01
+    promised_date: 2026-12-01
+    partial_delivery_allowed: false
+  - id: SOL-D-2001-1
+    sales_order_id: SO-D-2001
+    item_id: AC-24
+    qty: 150
+    unit_price: {amount: "2800.00", currency: SAR}
+    requested_date: 2026-12-20
+    promised_date: 2026-12-20
+    partial_delivery_allowed: true
+  - id: SOL-V-3001-1
+    sales_order_id: SO-V-3001
+    item_id: AC-18
+    qty: 400
+    unit_price: {amount: "2400.00", currency: SAR}
+    requested_date: 2026-12-20
+    promised_date: 2026-12-20
+    partial_delivery_allowed: false
+
+work_orders:
+  - {id: WO-1, item_id: AC-24, qty: 600, sales_order_line_id: SOL-H-1001-1, start_date: 2026-11-24, due_date: 2026-11-29, status: planned}
+  - {id: WO-2, item_id: AC-24, qty: 150, sales_order_line_id: SOL-D-2001-1, start_date: 2026-12-10, due_date: 2026-12-15, status: planned}
+  - {id: WO-3, item_id: AC-18, qty: 350, sales_order_line_id: SOL-V-3001-1, start_date: 2026-12-08, due_date: 2026-12-13, status: planned}
+
+suppliers:
+  - id: SUP-A
+    name: "Compressor maker A (fictional)"
+    country: CN
+    currency: USD
+    contact_addresses: [sales@cmp-a.example, gulf.agent@cmp-a.example]
+    on_time_rate: "0.85"
+  - id: SUP-B
+    name: "Compressor distributor B (fictional)"
+    country: AE
+    currency: USD
+    contact_addresses: [orders@cmp-b.example]
+    on_time_rate: "0.95"
+  - id: SUP-C
+    name: "Compressor maker C (fictional)"
+    country: IN
+    currency: USD
+    contact_addresses: [export@cmp-c.example]
+    on_time_rate: "0.70"
+  - id: SUP-D
+    name: "Copper tubing D (fictional)"
+    country: TR
+    currency: EUR
+    contact_addresses: [export@copper-d.example]
+  - id: SUP-E
+    name: "Control boards E (fictional)"
+    country: DE
+    currency: EUR
+    contact_addresses: [vertrieb@boards-e.example]
+    on_time_rate: "0.95"
+  - id: SUP-F
+    name: "Packaging F (fictional)"
+    country: SA
+    language: ar
+    currency: SAR
+    contact_addresses: [sales@pack-f.example]
+  - id: SUP-G
+    name: "Fasteners G (fictional)"
+    country: SA
+    language: ar
+    currency: SAR
+    contact_addresses: [sales@fast-g.example]
+
+supplier_items:
+  - {supplier_id: SUP-A, item_id: CMP-24, role: primary, lead_time_days: 45, contract_price: {amount: "300.00", currency: USD}}
+  - {supplier_id: SUP-A, item_id: CMP-18, role: primary, lead_time_days: 45, contract_price: {amount: "240.00", currency: USD}}
+  - {supplier_id: SUP-B, item_id: CMP-24, role: backup, lead_time_days: 7, min_order_qty: 50}
+  - {supplier_id: SUP-C, item_id: CMP-24, role: backup, lead_time_days: 21, min_order_qty: 100}
+  - {supplier_id: SUP-C, item_id: CMP-24-ALT, role: primary, lead_time_days: 21, contract_price: {amount: "290.00", currency: USD}}
+  - {supplier_id: SUP-D, item_id: CU-KIT-24, role: primary, lead_time_days: 20, contract_price: {amount: "38.00", currency: EUR}}
+  - {supplier_id: SUP-D, item_id: CU-KIT-18, role: primary, lead_time_days: 20, contract_price: {amount: "31.00", currency: EUR}}
+  - {supplier_id: SUP-E, item_id: PCB-CTRL, role: primary, lead_time_days: 30, contract_price: {amount: "42.00", currency: EUR}}
+  - {supplier_id: SUP-F, item_id: PKG-24, role: primary, lead_time_days: 5, contract_price: {amount: "18.00", currency: SAR}}
+  - {supplier_id: SUP-F, item_id: PKG-18, role: primary, lead_time_days: 5, contract_price: {amount: "15.00", currency: SAR}}
+  - {supplier_id: SUP-G, item_id: FST-KIT, role: primary, lead_time_days: 3, contract_price: {amount: "6.00", currency: SAR}}
+
+purchase_orders:
+  - {id: PO-4471, supplier_id: SUP-A, order_date: 2026-09-20}
+  - {id: PO-4472, supplier_id: SUP-A, order_date: 2026-09-20}
+  - {id: PO-4480, supplier_id: SUP-A, order_date: 2026-10-10}
+
+purchase_order_lines:
+  - id: POL-4471-1
+    purchase_order_id: PO-4471
+    item_id: CMP-24
+    qty_ordered: 500
+    unit_price: {amount: "300.00", currency: USD}
+    confirmed_date: 2026-11-10
+    expected_date: 2026-11-10
+  - id: POL-4472-1
+    purchase_order_id: PO-4472
+    item_id: CMP-18
+    qty_ordered: 300
+    unit_price: {amount: "240.00", currency: USD}
+    confirmed_date: 2026-11-25
+    expected_date: 2026-11-25
+  - id: POL-4480-1
+    purchase_order_id: PO-4480
+    item_id: CMP-24
+    qty_ordered: 150
+    unit_price: {amount: "300.00", currency: USD}
+    confirmed_date: 2026-12-01
+    expected_date: 2026-12-01
+
+offers:
+  - id: OFF-B-1
+    supplier_id: SUP-B
+    item_id: CMP-24
+    unit_price: {amount: "340.00", currency: USD}
+    min_qty: 50
+    max_qty: 250
+    lead_time_days: 7
+    valid_until: 2026-11-06T17:00:00+03:00
+    source: quote
+  - id: OFF-C-1
+    supplier_id: SUP-C
+    item_id: CMP-24
+    unit_price: {amount: "315.00", currency: USD}
+    min_qty: 100
+    max_qty: 400
+    lead_time_days: 21
+    valid_until: 2026-11-10T17:00:00+03:00
+    source: quote
+
+approvers:
+  - {id: APR-1, name: "Planner (fictional)", roles: [planner], address: planner@company.example}
+  - {id: APR-2, name: "Procurement manager (fictional)", roles: [procurement_manager], address: procurement@company.example}
+  - {id: APR-3, name: "Sales manager (fictional)", roles: [sales_manager], address: sales@company.example}
+  - {id: APR-4, name: "Operations director (fictional)", roles: [operations_director], address: ops@company.example}

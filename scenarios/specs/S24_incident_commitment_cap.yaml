@@ -1,0 +1,43 @@
+id: S24
+title: S01 under a lower per-incident commitment cap; escalate instead of asking for signatures
+group: policy
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+policy_overrides:
+  caps: {per_incident_commitment_base: 200000}
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S24-1
+      sender: sales@cmp-a.example
+      compose:
+        facts:
+          - {kind: split, po: PO-4471, item: CMP-24, on_time_qty: 300, late_qty: 200,
+             original_date: 2026-11-10, new_date: 2026-12-20}
+
+expected:
+  same_as: S01
+  approval_requests: []
+
+  final_state:
+    created: {}
+    changed: {}
+    unchanged: [purchase_order_lines, sales_order_lines, work_orders, stock, allocations]
+
+  outbox: []
+  review_tasks:
+    - {assignee_role: operations_director, reason_includes: [OPT-SUP-B, refused, per_incident_commitment_base]}
+  incident: {replan_count: 0, status: escalated}
+
+  must_not:
+    - an approval request that the gateway would refuse after both signatures
+
+worked_answer: |
+  Analysis as S01: OPT-SUP-B, 200 x 1,275 = SAR 255,000 of new commitment. The per-incident
+  cap here is 200,000. The gateway's preflight runs before anyone is asked to sign, finds
+  the cap exceeded, and the incident escalates to operations_director (routing.escalation)
+  with the reason. No request, no message, no record change.

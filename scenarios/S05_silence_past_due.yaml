@@ -1,0 +1,53 @@
+id: S05
+title: Supplier never confirms a PO line; agent chases, then hands it to the planner
+group: adversarial
+pack: riyadh_ac
+start: 2026-11-24T08:00:00+03:00
+end: 2026-11-26T18:00:00+03:00
+
+seed_overrides:
+  - {table: purchase_order_lines, id: POL-4480-1, set: {confirmed_date: null}}
+
+events: []                     # the point is that nothing arrives
+
+expected:
+  claims: []
+  generated_events:
+    - {kind: no_response, po_line_id: POL-4480-1, item_id: CMP-24, at: 2026-11-24T08:00:00+03:00, verification: verified}
+
+  shortage: []                 # silence is not a supply change; the plan still expects 1 Dec
+  options: []
+  mandate: null
+  approval_requests: []
+
+  final_state:
+    created: {}
+    changed: {}
+    unchanged: [purchase_order_lines, sales_order_lines, work_orders, allocations, stock]
+
+  outbox:
+    - {to: SUP-A, kind: supplier, template: status_request, at: 2026-11-24T08:00:00+03:00}
+    - {to: SUP-A, kind: supplier, template: status_request, at: 2026-11-25T08:00:00+03:00}
+
+  review_tasks:
+    - assignee_role: planner
+      created_at: 2026-11-26T08:00:00+03:00
+      reason_includes: [PO-4480, CMP-24, SOL-D-2001-1, "9 days"]
+
+  must_not:
+    - any change to POL-4480-1, in particular no guessed delay
+    - any purchase from a backup supplier
+    - more than two status requests
+    - any message to a customer
+
+worked_answer: |
+  1. Override: POL-4480-1 (150 x CMP-24, expected 1 Dec) has no confirmed_date.
+     Confirmation is due 7 days before the expected date: 24 Nov. At the first clock tick
+     on 24 Nov (08:00) the clock raises a no_response event. It is system-generated, so it
+     is verified, but it says only "unconfirmed", not "late".
+  2. Templated status request to SUP-A at 08:00 (template_only -> execute).
+  3. No reply within follow_up_hours (24): re-sent once at 25 Nov 08:00.
+  4. Still none by 26 Nov 08:00: a review task for the planner. It states the exposure from
+     pegging: POL-4480-1 feeds WO-2 (starts 10 Dec) for SOL-D-2001-1 (distributor, tier 3).
+     Slack = 10 Dec - 1 Dec = 9 days.
+  5. The plan is unchanged throughout. Treating silence as a delay would be guessing a date.

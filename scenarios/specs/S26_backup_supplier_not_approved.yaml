@@ -1,0 +1,46 @@
+id: S26
+title: SUP-C loses its approval; only SUP-B remains and the price ceiling widens
+group: policy
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+seed_overrides:
+  - {table: suppliers, id: SUP-C, set: {approved: false}}
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S26-1
+      sender: sales@cmp-a.example
+      compose:
+        facts:
+          - {kind: split, po: PO-4471, item: CMP-24, on_time_qty: 300, late_qty: 200,
+             original_date: 2026-11-10, new_date: 2026-12-20}
+  - {at: 2026-11-03T10:30:00+03:00, type: approval, approver_id: APR-2, decision: approve}
+  - {at: 2026-11-03T11:15:00+03:00, type: approval, approver_id: APR-4, decision: approve}
+
+expected:
+  same_as: S01
+  options:
+    - {id: OPT-B, kind: buy, suppliers: [SUP-B], incremental: 30000.00, risk: 4500.00, expected_total: 34500.00}
+    - {id: OPT-WAIT, kind: wait, suppliers: [], penalty: 90000.00, goodwill: 48000.00, expected_total: 138000.00}
+  options_excluded:
+    - {option: "Buy from SUP-C", reason: "SUP-C is not an approved source for CMP-24"}
+  recommendation: OPT-B
+  mandate:
+    item_id: CMP-24
+    min_qty: 200
+    max_qty: 200
+    latest_date: 2026-11-24
+    max_unit_price: {amount: "1725.75", currency: SAR}
+    next_best_option_id: OPT-WAIT
+    offer_within_mandate: true
+  final_state: {same_as: S01}
+
+worked_answer: |
+  As S01, except SUP-C is no longer approved, so its offer is excluded (and with it the
+  B + C split). The next best option is now waiting (138,000), so the ceiling for SUP-B
+  widens: headroom 138,000 - 4,500 = 133,500; less 10 % = 120,150; per unit 600.75;
+  ceiling 1,125 + 600.75 = SAR 1,725.75. Same purchase, same dual approval, same outcome.

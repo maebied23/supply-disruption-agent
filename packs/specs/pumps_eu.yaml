@@ -1,0 +1,111 @@
+# Compact description of a second fictional company, used to check that nothing about the
+# first company is built into the agent. scripts/generate.py turns it into
+# packs/pumps_eu/seed.yaml; policy.yaml beside it is written by hand.
+notes:
+  - "Fictional pump assembler. Values are illustrative."
+  - "Pack assumptions as for riyadh_ac: supplier dates are delivery dates at our plant;"
+  - "calendar days; all components on hand at work-order start; late undelivered PO"
+  - "quantities may be cancelled without charge; standing backup quotes are SupplierOffer rows."
+buffer_days: 2
+
+location: {id: PLANT-1, name: Pump assembly hall (fictional)}
+
+products:
+  - id: PMP-100
+    name: Centrifugal pump 100
+    assembly_days: 3
+    bom: {MTR-7: 1, IMP-100: 1, SEAL-S: 2, CASE-100: 1}
+
+components:
+  - id: MTR-7
+    name: Motor 7.5 kW
+    critical: true
+    stock: 40
+    sources:
+      - {supplier: SUP-MOTO, role: primary, lead_days: 30, price: {amount: "230.00", currency: USD}}
+      - {supplier: SUP-ELEC, role: backup, lead_days: 5, moq: 20}
+      - {supplier: SUP-DRIVE, role: backup, lead_days: 14, moq: 50}
+  - id: MTR-7-HE
+    name: Motor 7.5 kW, high efficiency
+    critical: true
+    stock: 25
+    sources:
+      - {supplier: SUP-ELEC, role: primary, lead_days: 5, price: {amount: "290.00", currency: EUR}}
+  - id: IMP-100
+    name: Impeller 100
+    stock: 400
+    sources:
+      - {supplier: SUP-CAST, role: primary, lead_days: 20, price: {amount: "35.00", currency: EUR}}
+  - id: SEAL-S
+    name: Shaft seal kit
+    stock: 1000
+    sources:
+      - {supplier: SUP-SEAL, role: primary, lead_days: 10, price: {amount: "2.50", currency: EUR}}
+  - id: CASE-100
+    name: Pump housing 100
+    stock: 400
+    sources:
+      - {supplier: SUP-CAST, role: primary, lead_days: 25, price: {amount: "60.00", currency: EUR}}
+
+substitutions:
+  # The machine builder accepts the high-efficiency motor; other customers' specs do not.
+  - {id: SUB-2, item_id: MTR-7, substitute_item_id: MTR-7-HE, ratio: 1, parent_item_ids: [PMP-100],
+     customer_ids: [CUS-OEM], requires_customer_consent: false}
+
+suppliers:
+  - {id: SUP-MOTO, name: Motor maker (fictional), country: CN, currency: USD, on_time_rate: "0.88",
+     contact_addresses: [sales@moto.example]}
+  - {id: SUP-ELEC, name: Motor distributor (fictional), country: DE, currency: EUR, on_time_rate: "0.97",
+     contact_addresses: [vertrieb@elec.example]}
+  - {id: SUP-DRIVE, name: Drive maker (fictional), country: PL, currency: EUR, on_time_rate: "0.80",
+     contact_addresses: [export@drive.example]}
+  - {id: SUP-CAST, name: Foundry (fictional), country: DE, currency: EUR, on_time_rate: "0.93",
+     contact_addresses: [orders@cast.example]}
+  - {id: SUP-SEAL, name: Seal maker (fictional), country: IT, currency: EUR, on_time_rate: "0.95",
+     contact_addresses: [ordini@sealco.example]}
+
+customers:
+  - id: CUS-WATER
+    name: Water utility (fictional)
+    priority_tier: 1
+    contact_addresses: [procurement@water.example]
+    default_penalty:
+      kind: per_day
+      amount_per_day: {amount: "1000.00", currency: EUR}
+      grace_days: 2
+      cap: {amount: "20000.00", currency: EUR}
+  - id: CUS-OEM
+    name: Machine builder (fictional)
+    priority_tier: 2
+    contact_addresses: [buying@oem.example]
+    default_penalty: {kind: fixed, amount: {amount: "6000.00", currency: EUR}, grace_days: 3}
+  - id: CUS-DIST
+    name: Pump distributor (fictional)
+    priority_tier: 3
+    contact_addresses: [orders@pumpdist.example]
+
+orders:
+  - {so: SO-W-1, customer: CUS-WATER, product: PMP-100, qty: 200, price: {amount: "900.00", currency: EUR},
+     ordered: 2026-12-01, promised: 2027-02-26, partial: false, wo: WO-1}
+  - {so: SO-O-1, customer: CUS-OEM, product: PMP-100, qty: 80, price: {amount: "850.00", currency: EUR},
+     ordered: 2026-12-10, promised: 2027-03-12, partial: true, wo: WO-2}
+  - {so: SO-D-1, customer: CUS-DIST, product: PMP-100, qty: 60, price: {amount: "800.00", currency: EUR},
+     ordered: 2027-01-05, promised: 2027-03-31, partial: true, wo: WO-3}
+
+purchase_orders:
+  - {id: PO-7001, supplier: SUP-MOTO, item: MTR-7, qty: 200, price: {amount: "230.00", currency: USD},
+     ordered: 2026-12-20, expected: 2027-02-15}
+  - {id: PO-7002, supplier: SUP-MOTO, item: MTR-7, qty: 100, price: {amount: "230.00", currency: USD},
+     ordered: 2027-01-10, expected: 2027-03-05}
+
+offers:
+  - {id: OFF-ELEC-1, supplier_id: SUP-ELEC, item_id: MTR-7, unit_price: {amount: "265.00", currency: EUR},
+     min_qty: 20, max_qty: 150, lead_time_days: 5, valid_until: "2027-02-12T17:00:00+01:00", source: quote}
+  - {id: OFF-DRIVE-1, supplier_id: SUP-DRIVE, item_id: MTR-7, unit_price: {amount: "228.00", currency: EUR},
+     min_qty: 50, max_qty: 300, lead_time_days: 14, valid_until: "2027-02-12T17:00:00+01:00", source: quote}
+
+approvers:
+  - {id: APR-11, name: Scheduler (fictional), roles: [scheduler], address: scheduling@pumps.example}
+  - {id: APR-12, name: Head of purchasing (fictional), roles: [head_of_purchasing], address: purchasing@pumps.example}
+  - {id: APR-13, name: Key account manager (fictional), roles: [key_account_manager], address: accounts@pumps.example}
+  - {id: APR-14, name: Plant manager (fictional), roles: [plant_manager], address: plant@pumps.example}

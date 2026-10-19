@@ -1,0 +1,89 @@
+id: S06
+title: Backup PO worth exactly the SAR 50,000 dual-control threshold
+group: policy
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+seed_overrides:
+  - {table: offers, id: OFF-B-1, set: {unit_price: {amount: "1250.00", currency: SAR}, min_qty: 0}}
+  - {table: supplier_items, match: {supplier_id: SUP-B, item_id: CMP-24}, set: {min_order_qty: 0}}
+  - {table: offers, id: OFF-C-1, set: {valid_until: 2026-11-01T17:00:00+03:00}}   # expired
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S06-1
+      channel: email
+      sender: sales@cmp-a.example
+      received_at: 2026-11-03T09:12:00+03:00
+      subject: "PO-4471 delivery update"
+      body: |
+        Dear Procurement Team,
+        We can deliver 460 of the 500 units of CMP-24 on PO-4471 on 10 November. The
+        remaining 40 units will follow on 20 December.
+        Best regards, Export Sales
+  - {at: 2026-11-03T10:30:00+03:00, type: approval, approver_id: APR-2, decision: approve}
+  - {at: 2026-11-03T11:15:00+03:00, type: approval, approver_id: APR-4, decision: approve}
+
+expected:
+  claims:
+    - {kind: partial_quantity, po_line_id: POL-4471-1, item_id: CMP-24, new_qty: 460, verification: verified}
+    - {kind: delay, po_line_id: POL-4471-1, item_id: CMP-24, new_qty: 40, new_date: 2026-12-20, verification: verified}
+
+  shortage:
+    - {so_line_id: SOL-H-1001-1, work_order_id: WO-1, item_id: CMP-24, short_qty: 40, need_by: 2026-11-24, line_at_risk: 600, penalty: 90000.00}
+
+  options:
+    - {id: OPT-B, kind: buy, suppliers: [SUP-B], description: "Buy 40 from SUP-B, cancel late 40 on PO-4471", incremental: 5000.00, risk: 4500.00, expected_total: 9500.00}
+    - {id: OPT-WAIT, kind: wait, suppliers: [], description: "Accept delay; hotel line delivered 2026-12-25", incremental: 0.00, penalty: 90000.00, goodwill: 48000.00, expected_total: 138000.00}
+  options_excluded:
+    - {option: "Buy from SUP-C", reason: "OFF-C-1 expired 2026-11-01"}
+  recommendation: OPT-B
+
+  mandate:
+    item_id: CMP-24
+    min_qty: 40
+    max_qty: 40
+    latest_date: 2026-11-24
+    max_unit_price: {amount: "4128.75", currency: SAR}
+    next_best_option_id: OPT-WAIT
+    offer_within_mandate: true
+
+  approval_requests:
+    - tier: dual
+      roles: [operations_director, procurement_manager]
+      decided: approved
+      facts: {commitment_base: 50000.00, incremental_cost_base: 5000.00}
+
+  final_state:
+    created:
+      purchase_orders: [{supplier_id: SUP-B, order_date: 2026-11-03}]
+      purchase_order_lines:
+        - {item_id: CMP-24, qty_ordered: 40, unit_price: {amount: "1250.00", currency: SAR}, expected_date: 2026-11-10}
+    changed:
+      purchase_order_lines:
+        POL-4471-1: {qty_ordered: 460}
+    unchanged: [sales_order_lines, work_orders, allocations, stock, substitutions]
+
+  outbox:
+    - {to: SUP-B, kind: supplier, template: purchase_order}
+    - {to: SUP-A, kind: supplier, template: po_change}
+
+  review_tasks: []
+
+  must_not:
+    - single-approver (approve tier) routing; the threshold is >=, not >
+    - any purchase from SUP-C (expired quote)
+
+worked_answer: |
+  1. Pegging: 100 on hand + 460 on 10 Nov = 560 by WO-1's start on 24 Nov -> short 40.
+  2. OPT-B: 40 x SAR 1,250 = 50,000 commitment; premium (1,250 - 1,125) x 40 = 5,000;
+     risk 4,500 -> 9,500. SUP-C's quote expired on 1 Nov, so it is not an option.
+     OPT-WAIT: as S01, 138,000.
+  3. Mandate: 0.9 x (138,000 - 4,500) = 120,150 -> 3,003.75/unit -> max SAR 4,128.75.
+     Offer SAR 1,250: within.
+  4. Governance: commitment_base = 50,000.00 and commitment-large uses >= 50,000 -> dual
+     [operations_director, procurement_manager]. Incremental 5,000 < 25,000 does not
+     match its rule. Getting this boundary wrong routes the PO to one approver.

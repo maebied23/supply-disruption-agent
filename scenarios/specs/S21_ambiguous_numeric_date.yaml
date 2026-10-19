@@ -1,0 +1,42 @@
+id: S21
+title: New date written as 03/12/2026; day-first and month-first readings differ
+group: ambiguous
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S21-1
+      sender: gulf.agent@cmp-a.example
+      compose:
+        date_style: numeric
+        facts:
+          - {kind: delay, po: PO-4471, item: CMP-24, qty: 500, new_date: 2026-12-03,
+             verification: unverified, note: ambiguous}
+
+expected:
+  shortage: []
+  options: []
+  recommendation: null
+  mandate: null
+  approval_requests: []
+
+  final_state:
+    created: {}
+    changed: {}
+    unchanged: [purchase_order_lines, sales_order_lines, work_orders, stock, allocations]
+
+  outbox:
+    - {to: SUP-A, kind: supplier, template: status_request}
+  review_tasks:
+    - {assignee_role: planner, reason_includes: [MSG-S21-1, ambiguous date, PO-4471]}
+
+worked_answer: |
+  03/12/2026 is 3 December day-first and 12 March month-first; both are real dates. The
+  extractor reads 2026-12-03, but the grounding check reports it as one reading of an
+  ambiguous date, so the claim stays unverified. A templated status request asks SUP-A
+  to confirm; the planner gets a review task. (3 Dec would leave the hotel on time; reading
+  it the other way would not even be a delay. Neither is safe to assume.)

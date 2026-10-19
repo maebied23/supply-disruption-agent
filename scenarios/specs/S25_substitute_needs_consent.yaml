@@ -1,0 +1,48 @@
+id: S25
+title: The best option is a substitute that needs customer consent; escalate to sales
+group: policy
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+seed_overrides:
+  - {table: substitutions, id: SUB-1, set: {requires_customer_consent: true}}
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S25-1
+      sender: sales@cmp-a.example
+      compose:
+        facts:
+          - {kind: split, po: PO-4480, item: CMP-24, on_time_qty: 70, late_qty: 80,
+             original_date: 2026-12-01, new_date: 2027-01-15}
+
+expected:
+  same_as: S12               # shortage, options, ranking
+  mandate: null
+  blocked_actions:
+    - {kind: apply_substitution, supplier_id: null, rule: substitution-without-consent}
+  approval_requests: []
+
+  final_state:
+    created: {}
+    changed: {}
+    unchanged: [purchase_order_lines, sales_order_lines, work_orders, stock, allocations, work_order_substitutions]
+
+  outbox: []
+  review_tasks:
+    - {assignee_role: sales_manager, reason_includes: [OPT-SUB-CMP-24-ALT, substitution-without-consent, OPT-SUP-C]}
+  incident: {replan_count: 0, status: escalated}
+
+  must_not:
+    - falling back silently to OPT-SUP-C (policy on_best_option_blocked is escalate)
+    - applying SUB-1 without consent
+
+worked_answer: |
+  Analysis as S12: the substitute is best (-3,000), then SUP-C (8,145). Here SUB-1 needs the
+  customer's consent and none is on file, so apply_substitution is blocked
+  (substitution-without-consent). The policy says escalate, never fall back silently; the
+  rule routes to sales_manager (routing.blocked_by_rule), who can ask the distributor or
+  choose SUP-C. Nothing is changed or sent.

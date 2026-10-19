@@ -1,0 +1,82 @@
+id: S34
+title: "Second company: the cheapest buy beats partial delivery by EUR 44; the 10 % margin blocks it"
+group: policy
+pack: pumps_eu
+start: 2027-02-01T08:00:00+01:00
+end: 2027-02-01T18:00:00+01:00
+
+events:
+  - at: 2027-02-01T09:00:00+01:00
+    type: email
+    message:
+      id: MSG-S34-1
+      sender: sales@moto.example
+      compose:
+        facts:
+          - {kind: split, po: PO-7002, item: MTR-7, on_time_qty: 70, late_qty: 30,
+             original_date: 2027-03-05, new_date: 2027-04-20}
+
+expected:
+  shortage:
+    - {so_line_id: SO-D-1-1, work_order_id: WO-3, item_id: MTR-7, short_qty: 30, need_by: 2027-03-26,
+       line_at_risk: 30, penalty: 1920.00}
+  options:
+    - {id: OPT-DRIVE, kind: buy, suppliers: [SUP-DRIVE], incremental: 820.00, risk: 96.00, expected_total: 916.00}
+    - {id: OPT-PARTIAL, kind: partial, suppliers: [], penalty: 960.00, expected_total: 960.00}
+    - {id: OPT-ELEC, kind: buy, suppliers: [SUP-ELEC], incremental: 1602.00, risk: 14.40, expected_total: 1616.40}
+    - {id: OPT-WAIT, kind: wait, suppliers: [], penalty: 1920.00, goodwill: 0.00, expected_total: 1920.00}
+    - {id: OPT-REALLOC, kind: reallocate, suppliers: [], penalty: 6000.00, goodwill: 7800.00, expected_total: 13800.00}
+  options_excluded:
+    - {option: "Reallocate MTR-7 from WO-1", reason: "WO-1 serves priority tier 1 (protect_priority_tiers)"}
+    - {option: "Substitute MTR-7-HE on WO-3", reason: "SUB-2 is approved for CUS-OEM only"}
+  recommendation: OPT-DRIVE
+  mandate:
+    item_id: MTR-7
+    min_qty: 50
+    max_qty: 50
+    latest_date: 2027-03-26
+    max_unit_price: {amount: "227.15", currency: EUR}
+    next_best_option_id: OPT-PARTIAL
+    offer_within_mandate: false
+
+  blocked_actions:
+    - {kind: create_po, supplier_id: SUP-DRIVE, rule: outside-mandate}
+  approval_requests: []
+
+  final_state:
+    created: {}
+    changed: {}
+    unchanged: [purchase_order_lines, sales_order_lines, work_orders, stock]
+
+  outbox: []
+  review_tasks:
+    - {assignee_role: head_of_purchasing, reason_includes: [OPT-SUP-DRIVE, outside mandate, "227.15", OPT-PARTIAL]}
+  incident: {replan_count: 0, status: escalated}
+
+  must_not:
+    - falling back silently to partial delivery
+
+worked_answer: |
+  1. Claim. PO-7002: 70 on 5 Mar, 30 on 20 Apr. Verified.
+
+  2. Pegging. MTR-7: 40 on hand, 200 on 15 Feb, 70 on 5 Mar, 30 on 20 Apr. WO-1 (21 Feb)
+     takes the 200. WO-2 (OEM, 80, 7 Mar) takes the 70 and 10 on hand. WO-3 (distributor,
+     60, 26 Mar) gets the other 30 on hand: short 30 until 20 Apr -> done 23 Apr, 23 days after
+     the 31 Mar promise. Default penalty 1 %/week: 4 weeks x 1 % x 800 x 60 = 1,920 (cap 5 %
+     = 2,400). Partial delivery allowed: 30 at risk.
+
+  3. Options (EUR).
+     OPT-SUP-DRIVE: minimum 50 at 228 (arrives 15 Feb), cancels the late 30:
+       16.40 x 50 = 820; risk 0.20 x one week late (1 % x 800 x 60 = 480) = 96 -> 916.
+     OPT-PARTIAL: 30 pumps on 29 Mar as planned, 30 on 23 Apr: 4 % x 800 x 30 = 960.
+     OPT-SUP-ELEC: 30 at 265: 53.40 x 30 = 1,602; risk 0.03 x 480 = 14.40 -> 1,616.40.
+     OPT-WAIT: 1,920.
+     OPT-REALLOC (WO-3 before the OEM's WO-2): the OEM line goes 42 days late: fixed 6,000 +
+       goodwill 200 x 39 = 7,800 -> 13,800. The utility's WO-1 is protected (tier 1).
+
+  4. Mandate. Next best is partial delivery at 960: headroom 960 - 96 = 864; less 10 % =
+     777.60; per unit 15.552 -> 15.55; ceiling 211.60 + 15.55 = EUR 227.15. The offer is
+     228: outside. The best option is blocked (outside-mandate) and the policy says
+     escalate: head_of_purchasing decides between paying 0.85 over the ceiling and partial
+     delivery. With a 0 % margin the ceiling would be 228.88 and the buy would go ahead
+     (see the margin sweep).

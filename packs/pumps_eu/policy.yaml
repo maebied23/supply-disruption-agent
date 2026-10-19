@@ -1,0 +1,162 @@
+# Company pack policy: fictional European pump assembler. Every value is illustrative.
+# A second pack exists to show that nothing about the first company is built into the agent:
+# different currency, role names, thresholds, penalties and routing; same agent code.
+version: 1
+
+company:
+  name: "Example Pump Works (fictional)"
+  base_currency: EUR
+  timezone: Europe/Berlin
+  workweek: [mon, tue, wed, thu, fri]
+  holidays: []
+  languages: [en]
+
+fx_rates_to_base:
+  EUR: "1"
+  USD: "0.92"
+  CNY: "0.13"
+
+# Most senior first (order is significant).
+roles:
+  plant_manager: Second signature on large commitments
+  head_of_purchasing: Approves supplier commitments
+  key_account_manager: Owns customer dates and customer messages
+  scheduler: Owns PO dates, allocation and the assembly schedule
+
+autonomy:
+  default: {tier: approve, approvers: [scheduler]}
+  rules:
+    - id: date-update-noncritical
+      actions: [update_po_expected_date, split_po_line]
+      when: {item_critical: false, creates_downstream_shortage: false}
+      tier: execute
+    - id: record-confirmation
+      actions: [record_po_confirmation]
+      tier: execute
+    - id: supplier-template-message
+      actions: [send_supplier_message]
+      when: {template_only: true}
+      tier: execute
+
+    - id: date-update-critical
+      actions: [update_po_expected_date, split_po_line]
+      when: {item_critical: true}
+      tier: approve
+      approvers: [scheduler]
+    - id: reallocation
+      actions: [reallocate_stock, reschedule_work_order]
+      tier: approve
+      approvers: [scheduler]
+    - id: commitment-small
+      actions: [create_po, update_po_quantity, cancel_po_line]
+      tier: approve
+      approvers: [head_of_purchasing]
+    - id: supplier-message-freetext
+      actions: [send_supplier_message]
+      when: {template_only: false}
+      tier: approve
+      approvers: [scheduler]
+    - id: customer-message
+      actions: [send_customer_message]
+      tier: approve
+      approvers: [key_account_manager]
+
+    - id: commitment-large
+      actions: [create_po, update_po_quantity]
+      when: {commitment_base_gte: 20000}
+      tier: dual
+      approvers: [head_of_purchasing, plant_manager]
+    - id: incremental-cost-large
+      actions: [create_po, update_po_quantity, apply_substitution]
+      when: {incremental_cost_base_gte: 8000}
+      tier: dual
+      approvers: [head_of_purchasing, plant_manager]
+    - id: customer-date-change
+      actions: [reallocate_stock, update_so_promise_date, split_so_line, apply_substitution]
+      when: {changes_customer_date: true}
+      tier: dual
+      approvers: [scheduler, key_account_manager]
+
+    - id: unapproved-supplier
+      actions: [create_po]
+      when: {supplier_approved_for_item: false}
+      tier: blocked
+    - id: outside-mandate
+      actions: [create_po]
+      when: {within_mandate: false}
+      tier: blocked
+    - id: substitution-without-consent
+      actions: [apply_substitution]
+      when: {requires_customer_consent: true, customer_consent_recorded: false}
+      tier: blocked
+
+caps:
+  per_incident_commitment_base: 150000
+  per_day_commitment_base: 300000
+  per_incident_incremental_cost_base: 40000
+  max_actions_per_incident: 25
+  max_replans_per_incident: 3
+
+approvals:
+  expiry_hours: 24
+  reminder_after_hours: 4
+  reproposals_after_rejection: 1
+  revalidate_on_resume: true
+  void_if_changed:
+    stock_on_hand_pct: 5
+    offer_price_pct: 2
+    any_customer_promise_date: true
+    any_po_expected_date: true
+
+extraction:
+  min_confidence: 0.80
+  require_sender_match: true
+  require_po_reference_resolves: true
+  allow_qty_above_open_po: false
+  require_values_in_quote: true
+  max_date_shift_days: 120
+  follow_up_hours: 24
+  contradiction_window_hours: 48
+  silence:
+    confirmation_due_days_before_expected: 7
+
+mandate:
+  premium_ceiling: next_best_alternative
+  safety_margin_pct: 10
+  validity_hours: 48
+
+options:
+  on_best_option_blocked: escalate
+  late_po_quantities_cancellable: true
+  enabled: [reallocate_stock, buy_from_backup, substitute, partial_delivery, accept_delay]
+  reallocation:
+    protect_priority_tiers: [1]
+  scoring:
+    objective: min_expected_total_cost
+    goodwill_cost_per_late_day_by_tier: {1: 800, 2: 200, 3: 0}
+    unfilled_late_days: 60
+
+default_penalty:
+  kind: pct_of_value_per_week
+  pct_per_week: 1
+  grace_days: 0
+  cap_pct_of_value: 5
+
+communication:
+  outbox_only: true
+  templates_dir: templates/
+  draft_languages: [en]
+  never_disclose:
+    - internal_cost
+    - penalty_terms
+    - mandate
+    - other_supplier_offers
+    - customer_identity_to_suppliers
+    - supplier_identity_to_customers
+
+routing:
+  review: scheduler
+  blocked_option: head_of_purchasing
+  blocked_by_rule:
+    substitution-without-consent: key_account_manager
+  escalation: plant_manager

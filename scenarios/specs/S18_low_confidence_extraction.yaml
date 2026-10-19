@@ -1,0 +1,45 @@
+id: S18
+title: The extractor is unsure about a clear-looking message; hold, ask, and tell the planner
+group: ambiguous
+pack: riyadh_ac
+start: 2026-11-03T08:00:00+03:00
+end: 2026-11-03T18:00:00+03:00
+
+events:
+  - at: 2026-11-03T09:12:00+03:00
+    type: email
+    message:
+      id: MSG-S18-1
+      sender: sales@cmp-a.example
+      compose:
+        facts:
+          - {kind: split, po: PO-4471, item: CMP-24, on_time_qty: 300, late_qty: 200,
+             original_date: 2026-11-10, new_date: 2026-12-20, confidence: 0.6,
+             verification: unverified, note: low confidence 0.60}
+
+expected:
+  shortage: []
+  options: []
+  recommendation: null
+  mandate: null
+  approval_requests: []
+
+  final_state:
+    created: {}
+    changed: {}
+    unchanged: [purchase_order_lines, sales_order_lines, work_orders, stock, allocations]
+
+  outbox:
+    - {to: SUP-A, kind: supplier, template: status_request}
+  review_tasks:
+    - {assignee_role: planner, reason_includes: [MSG-S18-1, low confidence 0.60, PO-4471, SOL-H-1001-1]}
+
+  must_not:
+    - any purchase order or change to PO-4471 on a 0.60-confidence reading
+    - more than one review task for the message
+
+worked_answer: |
+  The extractor reports both claims at confidence 0.60, below extraction.min_confidence
+  0.80. Both stay unverified, so nothing is planned. The supplier is genuine and the PO
+  resolves, so a templated status request goes to SUP-A (execute tier) and the planner gets
+  one review task for the message, naming the exposure (PO-4471 feeds WO-1 for the hotel).

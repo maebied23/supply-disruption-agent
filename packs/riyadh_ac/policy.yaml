@@ -1,0 +1,217 @@
+# Company pack policy: fictional Riyadh air-conditioning assembler.
+# Every value here is illustrative. Validated by src/sdra/policy.py on load;
+# unknown keys are rejected so a typo cannot silently weaken a control.
+version: 1
+
+company:
+  name: "Example Cooling Co. (fictional)"
+  base_currency: SAR
+  timezone: Asia/Riyadh
+  workweek: [sun, mon, tue, wed, thu]   # Saudi weekend is Fri-Sat
+  holidays: []                          # ISO dates, filled per simulated year
+  languages: [en, ar]
+
+# Fixed rates for the simulation. A real deployment reads a rate source.
+fx_rates_to_base:
+  SAR: "1"
+  USD: "3.75"
+  EUR: "4.30"
+  CNY: "0.52"
+  TRY: "0.09"
+
+# Role names referenced below, listed MOST SENIOR FIRST (order is significant).
+# People and their roles are seed data (Approver records).
+roles:
+  operations_director: Second signature on high-value or customer-visible decisions
+  procurement_manager: Approves supplier commitments
+  sales_manager: Owns customer promise dates and customer communication
+  planner: Supply planner; owns allocation, PO dates and work-order schedule
+
+# --- Autonomy -------------------------------------------------------------------
+# Every rule whose `actions` and `when` match applies; the most restrictive tier wins
+# (blocked > dual > approve > execute). Signatures are capped by tier: approve = 1,
+# dual = 2, each from a distinct person. One signer per kind of risk: each winning rule
+# first contributes its most senior role (seniority = order in `roles`); remaining places
+# are filled from the other roles those rules name, most senior first. So a large PO that
+# also moves a customer date is signed by operations_director + sales_manager.
+# A bundle of actions in one approval request resolves the same way.
+# Conditions are computed by the action gateway from records, never taken from the LLM.
+#
+# Condition vocabulary (all optional; all listed must hold for the rule to match):
+#   commitment_base_gte          value of new or increased supplier commitment, base currency
+#   incremental_cost_base_gte    extra cost vs the current plan, base currency
+#   changes_customer_date        a sales-order line promise date moves or splits
+#   creates_downstream_shortage  pegging shows a new shortage on any order or work order
+#   item_critical                Item.critical
+#   supplier_approved_for_item   a SupplierItem row exists and Supplier.approved
+#   within_mandate               the deal is inside the incident's mandate
+#   requires_customer_consent    the substitution needs customer consent
+#   customer_consent_recorded    a verified consent message is on file
+#   template_only                outbound message is a template with record-derived fields only
+#   hard_allocation              the stock being moved is hard-allocated
+autonomy:
+  default: {tier: approve, approvers: [planner]}   # anything unmatched needs one approver
+  rules:
+    # Execute alone
+    - id: date-update-noncritical
+      actions: [update_po_expected_date, split_po_line]
+      when: {item_critical: false, creates_downstream_shortage: false}
+      tier: execute
+    - id: record-confirmation
+      actions: [record_po_confirmation]
+      tier: execute
+    - id: supplier-template-message   # status requests, and the messages of an approved bundle
+      actions: [send_supplier_message]
+      when: {template_only: true}
+      tier: execute
+
+    # One approver
+    - id: date-update-critical
+      actions: [update_po_expected_date, split_po_line]
+      when: {item_critical: true}
+      tier: approve
+      approvers: [planner]
+    - id: reallocation
+      actions: [reallocate_stock, reschedule_work_order]
+      tier: approve
+      approvers: [planner]
+    - id: commitment-small
+      actions: [create_po, update_po_quantity, cancel_po_line]
+      tier: approve
+      approvers: [procurement_manager]
+    - id: supplier-message-freetext
+      actions: [send_supplier_message]
+      when: {template_only: false}
+      tier: approve
+      approvers: [planner]
+    - id: customer-message
+      actions: [send_customer_message]
+      tier: approve
+      approvers: [sales_manager]
+
+    # Dual control
+    - id: commitment-large
+      actions: [create_po, update_po_quantity]
+      when: {commitment_base_gte: 50000}
+      tier: dual
+      approvers: [procurement_manager, operations_director]
+    - id: incremental-cost-large
+      actions: [create_po, update_po_quantity, apply_substitution]
+      when: {incremental_cost_base_gte: 25000}
+      tier: dual
+      approvers: [procurement_manager, operations_director]
+    - id: customer-date-change
+      actions: [reallocate_stock, update_so_promise_date, split_so_line, apply_substitution]
+      when: {changes_customer_date: true}
+      tier: dual
+      approvers: [planner, sales_manager]
+    - id: move-hard-allocation
+      actions: [reallocate_stock]
+      when: {hard_allocation: true}
+      tier: dual
+      approvers: [planner, sales_manager]
+
+    # Blocked: the agent may recommend, a human must act outside the agent
+    - id: unapproved-supplier
+      actions: [create_po]
+      when: {supplier_approved_for_item: false}
+      tier: blocked
+    - id: outside-mandate
+      actions: [create_po]
+      when: {within_mandate: false}
+      tier: blocked
+    - id: substitution-without-consent
+      actions: [apply_substitution]
+      when: {requires_customer_consent: true, customer_consent_recorded: false}
+      tier: blocked
+
+# Trajectory-level limits, checked against the cumulative effect of an incident.
+caps:
+  per_incident_commitment_base: 600000
+  per_day_commitment_base: 1000000
+  per_incident_incremental_cost_base: 150000
+  max_actions_per_incident: 25
+  max_replans_per_incident: 3     # then escalate to a human
+
+approvals:
+  expiry_hours: 24                # simulated-clock hours
+  reminder_after_hours: 4
+  reproposals_after_rejection: 1  # then the incident closes as escalated
+  revalidate_on_resume: true
+  void_if_changed:                # approval is void if the basis moved this much since analysis
+    stock_on_hand_pct: 5
+    offer_price_pct: 2
+    any_customer_promise_date: true
+    any_po_expected_date: true
+
+extraction:
+  min_confidence: 0.80            # below goes to a human
+  require_sender_match: true      # sender must be in Supplier.contact_addresses
+  require_po_reference_resolves: true
+  allow_qty_above_open_po: false
+  require_values_in_quote: true   # a claimed quantity/date must be readable from the quoted text
+  max_date_shift_days: 120        # larger claimed shifts go to a human
+  follow_up_hours: 24             # unanswered status request is re-sent once, then a review task
+  # Verified-sender claims on the same PO line that disagree within this window are held;
+  # a reply to our status request about that line supersedes them.
+  contradiction_window_hours: 48
+  silence:
+    confirmation_due_days_before_expected: 7   # no confirmation by then raises no_response
+
+mandate:
+  # For the best option X: headroom = E[total] of the next-best option - X's non-price cost
+  # (risk + penalties + goodwill). Max extra cost = headroom - margin x |headroom|.
+  # Max unit price = price of the supply X displaces + max extra cost / qty, rounded down.
+  # accept_delay is always an option, so the ceiling never exceeds the penalty avoided.
+  premium_ceiling: next_best_alternative
+  safety_margin_pct: 10
+  validity_hours: 48
+
+options:
+  # If the best option is blocked (e.g. outside its mandate), escalate to a human.
+  # A rejected or excluded option is removed instead, and the next best is proposed.
+  on_best_option_blocked: escalate
+  late_po_quantities_cancellable: true   # pack assumption; see seed.yaml header
+  enabled: [reallocate_stock, buy_from_backup, substitute, partial_delivery, accept_delay]
+  reallocation:
+    protect_priority_tiers: [1]   # stock pegged to tier-1 customers is never taken
+  scoring:
+    objective: min_expected_total_cost   # incremental cost + expected penalties + goodwill
+    goodwill_cost_per_late_day_by_tier: {1: 2000, 2: 500, 3: 0}
+    unfilled_late_days: 90        # lateness assumed for a line the plan never completes
+    # Risk of new supply = P(any feeding supplier late) x the line's penalty one day past grace,
+    # where P(on time) is the product of Supplier.on_time_rate.
+
+# Used when neither the sales-order line nor the customer specifies terms.
+default_penalty:
+  kind: pct_of_value_per_week
+  pct_per_week: 2
+  grace_days: 0
+  cap_pct_of_value: 10
+
+communication:
+  outbox_only: true
+  templates_dir: templates/
+  draft_languages: [en]           # Arabic drafting is out of scope in V1
+  never_disclose:                 # deterministic outbound leak check on every message
+    - internal_cost
+    - penalty_terms
+    - mandate
+    - other_supplier_offers
+    - customer_identity_to_suppliers
+    - supplier_identity_to_customers
+
+# Who receives work the agent cannot finish (roles from `roles`).
+routing:
+  review: planner                       # unreadable/unverifiable messages, silence, refused autonomous actions
+  blocked_option: procurement_manager   # best option blocked (e.g. outside its mandate): choose how to proceed
+  blocked_by_rule:
+    substitution-without-consent: sales_manager   # obtaining customer consent is a sales task
+  escalation: operations_director       # re-plan cap, gateway refusal, rejected twice
+
+negotiation:                      # V2 only; ignored by V1
+  max_rounds: 3
+  deadline_hours: 24
+  concession:
+    tactic: time_dependent        # Faratin, Sierra & Jennings 1998
+    beta: 0.5                     # < 1 Boulware (concede late), > 1 Conceder
